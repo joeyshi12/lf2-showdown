@@ -1,0 +1,228 @@
+address	name	confidence	status	description
+0043cf40	WinMain	high	platform	srand(timeGetTime()), init, message loop calling the frame function every 33 ms (3 ms while DAT_0044d02c == 0)
+0043e9a0	frame	high	verified	one frame: A-B-C key sequence for tool modes (F1-F3), then menus or match; key-sequence part ported as World::step
+004246b0	menus	high	verified	main menu and top-level state (thiscall on 0x458b00); state 2 runs match_frame [menu_title (states -2, 0, 6, 7, 8), menu_main; network screens 1-4 via net_check.py]
+0041bc90	match_frame	high	verified	one match frame: data load on first call, input, F-keys, network, tick, random weapon drops, drawing; ported as World::match_frame/tick for VS mode
+0043b3d0	wndproc	high	platform	window procedure; writes 'd'/'u' to the key array 0x455378 on key down/up, mouse to 0x4546f0/0x453cdc
+00419a60	read_inputs_and_ai	high	verified	copy keys of players 1-4 into objects 0-7 (on half_frame 0), then AI for objects 10-399
+004198f0	read_remote_inputs	medium	verified	network/replay: key bytes into objects whose player slot is -1 [net_check.py (original against the port, both roles)]
+004197a0	replay_step	low	verified	replay mode bookkeeping [demos test]
+004094b0	ai_character	high	verified	computer player AI for one character (calls 0x403a40, 0x408cb0, 0x4034f0)
+00403a40	ai_use_specials	high	verified	character AI: per-character special-move decisions; returns 1 when it chose one [specials_<hero> traces]
+00408cb0	ai_use_weapon	high	verified	character AI while holding a weapon; returns 0 to end the AI call [ai_items, ai_<hero> traces]
+004034f0	ai_basic_attacks	high	verified	character AI: attack, defend and dash attack near the target [ai_<hero> traces]
+00406ba0	ai_projectile	high	verified	steering for objects whose frame has hit_Fa > 0 (homing balls)
+00406a20	ai_projectile_aux	high	ported	spawn helper used by ai_projectile
+004061a0	between	high	verified	1 when b lies strictly between a and c (either order)
+004034e0	abs_int	high	verified	absolute value (used by AI and fusion)
+00413080	obj_controls	high	verified	key timers, special-move inputs, walking/running/jumping/dashing from keys
+0040e450	push_key	high	verified	push a key code into the five-entry history at 0x408
+0040e170	other_key_pressed	high	verified	whether a key other than the given one was pressed this tick
+0040e2d0	goto_frame	high	verified	switch frame for hit_* inputs; pays hp/mp cost when specials cost mp
+00412800	special_DRA	high	verified	defend, right, attack -> hit_Fa
+004128f0	special_DLA	high	verified	defend, left, attack -> hit_Fa [specials traces]
+004129e0	special_DUA	high	verified	defend, up, attack -> hit_Ua [specials traces]
+00412ac0	special_DDA	high	verified	defend, down, attack -> hit_Da [specials traces]
+00412ba0	special_DRJ	high	verified	defend, right, jump -> hit_Fj [specials traces]
+00412c90	special_DLJ	high	verified	defend, left, jump -> hit_Fj [specials traces]
+00412d80	special_DUJ	high	verified	defend, up, jump -> hit_Uj [specials traces]
+00412e60	special_DDJ	high	verified	defend, down, jump -> hit_Dj [specials traces]
+00412f40	special_DJA	high	verified	defend, jump, attack -> hit_ja (with the Louis/LouisEX rule) [specials traces]
+0040e490	obj_move	high	verified	velocity, friction, gravity, landing and bouncing; truncate to ix/iy/iz
+0042e100	obj_update	high	verified	apply registered hits: damage, knockback, falls, defend, catch, pick up, balls, sparks
+0040d960	obj_post_update	high	verified	per-object timers, frame advance by wait/next, jump start, mp-cost frames
+00417f80	bound_and_carry	high	verified	clamp characters to the background's z range; place held weapons; throw, drop, drink
+004187b0	catch_hold	high	ported	put a caught object at the catcher cpoint, cpoint injury
+00418c30	catch_controls	high	ported	catcher keys, grip timer, throws
+00419380	collisions	high	verified	itr/bdy tests between all object pairs, then after_collisions
+00417200	itr_touches_bdy	high	verified	bounding-box test of an attacker's itrs against a victim's bdys
+004171c0	rects_overlap	high	verified	rectangle overlap test
+00417400	register_hit	high	verified	per itr/bdy test; adds the victim to the attacker's hit list
+004064d0	after_collisions	medium	ported	Firen + Freeze fusion into Firzen, and the split
+004196f0	apply_knockback	high	verified	turn knockback collected this tick into velocity
+0041b5d0	bound_x_and_camera	high	verified	clamp x, remove objects that leave the background, camera
+0041a250	draw_background	high	verified	draws the background layers; ported in lf2-app render.rs (picture compared with the original)
+0041a050	draw_background_layer	low	ported	called by draw_background [lf2-app render.rs]
+0041a5a0	draw_objects	high	verified	z-sorted object drawing; advances hit-spark animations (ported as advance_sparks)
+0040de30	draw_object	high	verified	draws one object; ported in lf2-app render.rs (picture compared with the original)
+0041ae60	draw_hud	high	verified	draws the eight status panels; ported in lf2-app render.rs (picture compared)
+0041b130	draw_mode_label	low	verified	draws "VS mode (Difficult)" and similar [every match trace (0x450c38)]
+0041b390	draw_replay_info	low	ported	draws replay information [draws into the draw list (replay.rs draw_replay_info)]
+00403270	teleport	high	ported	states 400/401: move next to the nearest enemy or farthest teammate
+00417170	random	high	verified	game RNG: (table[bcc] + c34) % n
+00422ac0	fill_random_table	high	verified	3000 bytes of rand() % 255 + 1; called when "game start" is clicked [menu_main (boot state), menu_title]
+00417090	play_sound	high	verified	queue a system sound with left/right volume from x
+00416fb0	play_sound_id	high	verified	queue a data-file sound with left/right volume from x
+00419e60	flush_sounds	high	verified	play queued sounds at the end of a frame and clear the flags
+004014e0	load_wave	high	platform	load a .wav into a DirectSound buffer (mmio)
+00401970	sound_init	medium	platform	DirectSound create
+004019b0	sound_release	medium	platform	release sound buffers
+00401a30	play_buffer	medium	platform	play a DirectSound buffer directly (menu sounds)
+00401c90	music_init	medium	platform	DirectShow filter graph create
+00401d30	music_release	medium	platform	release the filter graph
+00401da0	music_render_file	medium	platform	RenderFile for a music file
+00401e90	music_event	low	platform	filter graph event handling
+00401f30	music_play	low	platform	run the filter graph
+00402000	music_flag	low	platform	sets a music flag
+00402020	play_music	high	verified	play a bgm file unless it is already playing [menu_pick, menu_pick_stage (0x44ef04)]
+00402100	music_stop	low	verified	stop music [menu_pick]
+00402130	draw_music_menu	medium	verified	music selection on the pick screen [menu_pick]
+004025b0	play_music_menu	low	verified	plays menu music [menu_pick]
+004025d0	music_for_stage	medium	verified	bgm file for a stage [menu_pick_stage, demo]
+00401000	dd_startup	high	platform	DirectDraw cooperative level and display mode
+00401090	dd_restore	low	platform	DirectDraw helper
+00401110	dd_fake_flipper	high	platform	create primary and back buffer for windowed mode
+004011d0	dd_show	low	platform	ShowWindow after DirectDraw init
+00401250	clear_surface	medium	platform	fill a surface with one colour (Blt with DDBLT_COLORFILL); frame() clears the back buffer to black with it every frame [lf2-app render.rs draw_frame]
+00401290	draw_text	high	platform	TextOutA onto the back buffer
+00401300	dd_full_configure	high	platform	full-screen DirectDraw configuration
+004013d0	dd_copy_bitmap	high	platform	StretchBlt a GDI bitmap into a surface
+00401a80	release_surfaces	low	platform	release DirectDraw surfaces
+00401ae0	destroy_window	low	platform	DestroyWindow
+00401b00	create_window	high	platform	register class and create the 794x550 window
+00401bf0	create_window_fullscreen	medium	platform	window for full-screen mode
+0043bdd0	video_init	medium	platform	DirectDraw startup sequence
+0043bec0	init_app	medium	platform	window and DirectDraw init
+0043bf10	joystick_init	high	platform	joystick capabilities and capture
+0043e890	video_reinit	low	platform	reinitialise after a mode change
+0043e8e0	clear_back_buffer	low	platform	fill the back buffer
+0043e940	present	medium	platform	present the back buffer
+0043ed10	load_bitmap	high	platform	LoadImageA from file or resource
+0043ee50	surface_from_bitmap	high	platform	create a DirectDraw surface from a bitmap with colour key
+0043ef50	surface_release	low	platform	release a surface
+0043ef70	surface_restore	low	platform	restore a lost surface
+0043f010	blit_sprite	high	ported	blit one cell of a sprite sheet (lf2-app Frame::blit)
+0043f310	blit_rect	low	platform	blit a rectangle
+00415160	fill_rect	high	ported	fill a rectangle (lf2-app Frame::fill)
+0043d230	pump_messages	high	platform	process waiting window messages during loading
+0040ef70	load_object	high	verified	object .dat loader (lf2-data object.rs; memory dump test)
+004122f0	load_all_data	high	verified	data.txt loader (lf2-data lib.rs; memory dump test)
+0040c160	load_background	high	verified	bg.dat loader (lf2-data bg.rs; memory dump test)
+0040c910	load_stages	high	verified	stage.dat loader (lf2-data stage.rs; memory dump test)
+004148a0	decode_to_temporary	high	verified	decode a .dat into data\temporary.txt (lf2-data crypt.rs)
+00414a30	decode_file	high	verified	decode a .dat into a given file (lf2-data crypt.rs)
+004146b0	encode_file	high	verified	encode a text file into .dat (lf2-data crypt.rs)
+0040bbf0	frame_init	high	verified	clear one frame before loading
+0040bd90	sound_lookup	high	verified	find or add a sound name in the global table
+004061d0	obj_reset	high	verified	clear an object for reuse (used by every spawn)
+004242e0	draw_loading_screen	medium	named	"Now Loading" screen with the current file name
+00423230	save_controls	high	ported	write data\control.txt [menu/title.rs save_controls; the file text is not compared with the original's]
+00423480	load_controls	high	verified	read data\control.txt [menu_title (Cancel reads control.txt again)]
+00422b00	key_name	high	verified	name of a virtual key for the controls dialog [menu_main]
+00422f60	key_char	medium	verified	character for a key (typing names, IP addresses) [menu_title]
+004236d0	ads_update	low	named	advertisement data update (thread)
+004237e0	ads_start_thread	low	named	start the advertisement download thread
+0043c0c0	ads_download	medium	named	download advertisement images (WinINet)
+0043c450	ads_thread	low	named	thread body
+0043c4a0	ads_load_info	medium	verified	read data\adinfo.txt [menu_main (boot state from adinfo.txt)]
+0043c690	ads_reset_info	low	named	write a default data\adinfo.txt
+0043c710	ads_write_info	low	named	write data\adinfo.txt
+0043c780	ads_load	medium	verified	load advertisement descriptions [menu_main]
+0043cc60	ads_load_images	low	platform	load advertisement bitmaps
+00423840	load_menu_background	medium	verified	MENU_BACKn bitmap [menu_main]
+00423910	free_menu_background	low	verified	release menu background [menu_title]
+00423940	draw_number	low	verified	draws digits [menu_main]
+00423a70	draw_number_wrapper	low	verified	calls draw_number [menu_title]
+00423b00	draw_main_menu	medium	verified	main menu items and ads [menu_main]
+00429730	game_menus	medium	verified	pick screen, dialogs and end-of-match screens for VS and Stage [menu_pick, menu_pick_com, menu_pick_stage, demo]
+00432ab0	championship_1on1_menus	medium	verified	1 on 1 championship screens [champ1]
+00434ab0	championship_2on2_menus	medium	verified	2 on 2 championship screens [champ2]
+00438b40	battle_menus	medium	verified	battle mode screens [menu_battle]
+00431d10	recording_menus	medium	verified	playback/recording dialogs [menu_main, demos test]
+00431b70	championship_aux	low	verified	shared by the championship screens [menu_main]
+00431c70	end_match	high	verified	called when a match ends (stops recording) [match_end, champ1, champ2]
+00437860	stage_mode_tick	medium	verified	stage mode per tick: phases, spawning soldiers and bosses [stage_1, stage_1_clear, menu_survival]
+00436fc0	stage_spawn	medium	verified	called by stage_mode_tick [stage_1, stage_1_clear]
+00437400	stage_phase	medium	verified	called by stage_mode_tick [stage_1_clear]
+00437220	stage_aux	low	verified	called by game_menus [stage_1_clear]
+0043a860	battle_mode_tick	medium	verified	battle mode per tick [battle_1, menu_battle]
+004389a0	battle_aux	low	verified	called by battle_menus [menu_battle]
+00438ad0	battle_aux2	low	verified	called by battle_menus [menu_battle]
+0043d2c0	recording_start	medium	verified	allocate a recording and copy the RNG table into it [rec_messages, demos test]
+0043d280	recording_free	low	ported	free a recording [World.recording = None]
+0043d2a0	recording_stop	low	verified	stop recording [rec_messages]
+0043db40	recording_write_frame	medium	verified	write one frame of keys into the recording [demos test (recorded hp sums)]
+0043dc50	replay_read_frame	medium	verified	read one frame of keys from a replay [demos test]
+0043dd60	recording_save	medium	ported	save a .lfr (zlib) [lf2-data lfr::encode (tests/lfr.rs round trip)]
+0043df00	replay_restore	low	verified	restore state after a replay [demos test]
+0043dfa0	replay_load	medium	verified	load a .lfr and restore the RNG table [demos test]
+0043e620	replay_read_file	medium	ported	read and inflate a .lfr [lf2-data lfr::decode (tests/lfr.rs)]
+004028a0	recording_messages	medium	verified	on-screen recording messages and volume [rec_messages]
+00402810	message_aux	low	verified	called by recording_messages [rec_messages]
+00402a60	net_aux	low	platform	network helper [lf2-app net.rs]
+00402ad0	net_local_address	low	platform	local IP address text [lf2-app net.rs]
+00402b60	net_init	high	platform	WSAStartup, socket, WSAAsyncSelect [lf2-app net.rs]
+00402d70	net_send	medium	platform	sendto [lf2-app net.rs]
+00402ec0	net_receive	medium	verified	accept/recv; receives the RNG table from the server [net_check.py]
+004031d0	net_close	low	platform	close sockets [lf2-app net.rs]
+00416c70	fkey_f1	high	ported	key 0xf9 handler: toggle DAT_00458428
+00416ca0	fkey_f2	high	ported	key 0xf8 handler: toggle DAT_0045842c
+00416cd0	fkey_f3	high	ported	F4: leave the match
+00416dd0	fkey_f4	high	ported	F1: pause
+00416df0	fkey_f5	high	ported	F2: single step
+00416e10	fkey_f6	high	ported	F3: lock cheat keys
+00416e30	fkey_f7	high	ported	F5: speed
+00416e60	fkey_f8	high	verified	F6: specials cost no mp [weapon_rain, ai_items]
+00416eb0	fkey_f9	high	ported	F7: heal everybody
+00416f10	fkey_f10	high	ported	F8: weapons rain
+00416f60	fkey_f11	high	ported	F9: destroy weapons
+00414b70	tool_encrypt	high	named	F3 tool: encrypt/decrypt a file
+00414450	tool_read_line	low	named	text input for the tools
+004143d0	tool_alloc	low	named	allocation used by the data editor
+004151d0	tool_data_editor	high	named	F2 tool: data file editor
+0040d0a0	tool_save_object	high	named	data editor: write an object back as text
+0040d940	tool_aux	low	named	data editor helper
+00415140	tool_aux2	low	named	data editor helper
+0040be70	draw_box	high	ported	draw a frame picture by pic number (lf2-app draw_object)
+0040bf30	draw_box2	high	ported	cell width of a frame picture
+0040bfb0	draw_box3	low	platform	draws a box
+0040c030	free_object_data	low	platform	free a data file
+0040c0e0	free_all_data	low	platform	free all data files
+004450d0	ftol	high	verified	CRT _ftol2: double to int, truncating
+00419e40	static_init	low	platform	static initialiser of the game object
+0043f400	zlib_43f400	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f4b0	zlib_43f4b0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f4d0	zlib_43f4d0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f570	zlib_43f570	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f5a0	zlib_43f5a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f610	zlib_43f610	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f8a0	zlib_43f8a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043f9c0	zlib_43f9c0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+004403a0	zlib_4403a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440420	zlib_440420	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440640	zlib_440640	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440670	zlib_440670	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+004406c0	zlib_4406c0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440710	zlib_440710	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440810	zlib_440810	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440830	zlib_440830	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00440d60	zlib_440d60	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00441de0	zlib_441de0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00441e60	zlib_441e60	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00441ed0	zlib_441ed0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00441f60	zlib_441f60	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+004422a0	zlib_4422a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00442340	zlib_442340	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00442730	zlib_442730	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00442920	zlib_442920	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+004429a0	zlib_4429a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00442a40	zlib_442a40	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+004435a0	zlib_4435a0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00443cf0	zlib_443cf0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00443d30	zlib_443d30	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444450	zlib_444450	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444470	zlib_444470	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444960	zlib_444960	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444a10	zlib_444a10	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444ba0	zlib_444ba0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444bd0	zlib_444bd0	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+00444d00	zlib_444d00	high	library	zlib 1.1.4 (deflate/inflate) used for .lfr recordings
+0043e860	dd_restore_surfaces	medium	platform	Restore the primary and back surfaces after they are lost
+0044566e	crt_pre_c_init	high	library	CRT startup step (returns 1)
+00445732	crt_cxx_exception_filter	high	library	CRT: terminate on an uncaught C++ exception
+00445784	crt_onexit	high	library	CRT _onexit
+00445820	crt_unlock_onexit	high	library	CRT: _unlock(8)
+00445829	crt_atexit	high	library	CRT atexit
+0044583b	crt_empty	high	library	CRT: empty initialiser
+00445a31	crt_set_fpu_precision	high	library	_controlfp_s(NULL, _PC_53, _MCW_PC): x87 at 53-bit precision. No other code changes the control word (checked: the only fldcw/fnstcw in .text is the read inside _ftol2)
+00445a5a	crt_empty2	high	library	CRT: returns 0

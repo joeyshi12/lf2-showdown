@@ -1,0 +1,47 @@
+address	type	name	description
+0044d020	int	match_phase	0 playing, 1 pick screen, 10 main menu, others: end-of-match screens
+0044d024	int	background	index of the current background
+0044d02c	int	slow_frames	WinMain frame period: 0 -> 3 ms, otherwise 33 ms
+0044d034	int	mp_cost_on	nonzero: specials cost mp
+0044d05c	int	match_first_frame	1 before the match's first frame (load data), 2 on the first tick
+0044d324	int	stage_random_ids	stage mode: 10 character ids that id 1000 spawns take in turn (shuffled)
+0044d34c	int	stage_random_next	stage mode: next index into stage_random_ids; -1 or 10 reshuffles
+0044f604	int	ai_x_limit	AI: right edge of the area it keeps to (0x450bb4 if positive, else background width)
+0044f608	int	ai_hold_back	AI stage mode: 1 or 2 when this computer player is far ahead of the human players
+0044f60c	int	ai_level	AI: difficulty used this call (0 when forced easy)
+0044f610	int	ai_level20	AI: ai_level * 20
+0044f614	int	ai_level15	AI: ai_level * 15
+0044f618	int	ai_level5	AI: ai_level * 5
+0044f61c	int	ai_level3	AI: ai_level * 3
+0044f620	int	data_checksum	sum over loaded tokens, compared between network peers
+0044f880	int	survival_phase	stage mode: phases started in this stage (shown in survival)
+0044fb6c	int	stage_phase	stage mode: current phase of the stage, -1 before the first
+00450b80	int	recording	nonzero while writing a .lfr
+00450b84	int	replaying	nonzero while playing a .lfr
+00450b88	int	demo	nonzero in demo mode
+00450b8c	int	match_frames	frames since the match started (capped at 0x9e33f)
+00450b90	int	half_frame	toggles 0/1 every match frame; keys are read when it becomes 0
+00450b94	int	stage	stage mode: stage number, 10 * chapter + stage (50 survival)
+00450b98	int	u_450b98	stage mode: set when a chapter is cleared
+00450b9c	int	stage_go_timer	stage mode: "GO" arrow timer after a phase is cleared
+00450ba0	int	survival_blink	survival: blink timer of the phase number
+00450ba4	int	stage_fade	stage mode: fade-out/fade-in step between stages (0..20)
+00450ba8	int	stage_state	stage mode: 0 playing, 1 all phases cleared, 3 fading to the next stage
+00450bac	int	u_450bac	stage mode: 1 makes computer players walk right
+00450bb0	int	u_450bb0	stage mode: phase bound - 794 (camera limit)
+00450bb4	int	u_450bb4	weapon drop x range override
+00450bcc	int	rng_bcc	random(): index into the 3000-byte table
+00450bd0	int	tick_mod12	(n + 1) % 12 every tick
+00450bd4	int	tick_mod3	(n + 1) % 3 every tick
+00450bd8	int	tick_parity	1 - n every tick
+00450bdc	int	end_timer	counts up once the match is decided
+00450c2c	int	u_450c2c	
+00450c30	int	difficulty	selected difficulty
+00450c34	int	rng_c34	random(): (n + 1) % 1234 per call
+0045115c	int	weapon_count	weapons and items in play, counted each tick
+00451160	int	game_mode	0 VS, 1 stage, 2 1-on-1 championship, 3 2-on-2, 4 battle, 5 demo?, 6 replay
+004514e0	int	stage_reserved	stage mode: int[400], objects kept for a spawn slot this tick
+00451b30	int	u_451b30	stage mode: a boss of the phase is alive
+00451b34	int	u_451b34	stage mode: 1 when the phase has nothing left to spawn
+00458428	int	u_458428	
+00459f08	int	crt_seed	msvcr80 rand() seed, moved here by the harness patch

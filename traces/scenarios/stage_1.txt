@@ -1,0 +1,23 @@
+# stage_1: stage mode 1-1, difficult. Human Davis has 1 hp and is knocked out early;
+# computer Davis and Firen (team 1) fight the bandits through the phases.
+mode stage
+p1 23
+p2 none
+com 23
+com 19
+difficulty 2
+rng zero
+wait 30
+set p1 hp 1
+set o11 mp 500
+set o12 mp 500
+wait 600
+set o11 hp 500
+set o12 hp 500
+wait 600
+set o11 hp 500
+set o12 hp 500
+wait 600
+set o11 hp 500
+set o12 hp 500
+wait 600

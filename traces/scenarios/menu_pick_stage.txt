@@ -1,0 +1,30 @@
+# menu_pick_stage: stage mode from the main menu: one human, one computer, the stage
+# choice forward and back to 1, music off and on, Fight!, first frames of stage 1-1.
+mode menu
+wait 5
+tap p1.down
+tap p1.attack
+wait 10
+tap p1.attack
+tap p1.left
+tap p1.attack
+wait 200
+tap p1.right
+tap p1.attack
+tap p1.right
+tap p1.attack
+wait 5
+tap p1.down
+tap p1.attack
+tap p1.attack
+tap p1.attack
+tap p1.attack
+tap p1.attack
+tap p1.attack
+tap p1.left
+tap p1.right
+tap p1.up
+tap p1.up
+tap p1.up
+tap p1.attack
+wait 60

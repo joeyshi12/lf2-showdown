@@ -1,0 +1,57 @@
+# controls_fkeys: the F-keys during a VS match, Davis (player 1) against Woody
+# (player 2). F1 pauses (Davis's walk stops), F2 runs single frames while paused, F1
+# resumes; F5 switches the frame period; F6 turns the mp cost off and on; F7 heals;
+# F8 drops weapons; F9 destroys them; keys 0xf9 and 0xf8 are the ones the window
+# procedure writes for the typed words "lf2.net" and "herofighter.com"; F3 locks the
+# cheat keys, after which F6 does nothing.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 600 300 1
+wait 70
+hold 4 p1.right
+hold 2 p1.right vk.70
+hold 10 p1.right
+hold 2 vk.71
+wait 4
+hold 2 vk.71
+wait 4
+hold 2 p1.right vk.71
+wait 4
+hold 2 vk.70
+wait 10
+hold 2 vk.74
+wait 10
+hold 2 vk.74
+wait 10
+hold 2 vk.75
+wait 4
+set p1 mp 50
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.attack
+wait 60
+hold 2 vk.75
+wait 4
+set p1 hp 100
+hold 2 vk.76
+wait 10
+hold 2 vk.77
+wait 60
+hold 2 vk.78
+wait 30
+hold 2 vk.f9
+wait 10
+hold 2 vk.f8
+wait 10
+hold 2 vk.f9
+wait 10
+hold 2 vk.f8
+wait 10
+hold 2 vk.72
+wait 4
+hold 2 vk.75
+wait 20

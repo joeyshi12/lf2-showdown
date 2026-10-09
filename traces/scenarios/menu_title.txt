@@ -1,0 +1,48 @@
+# menu_title: the title screen: hover the items, open Control Settings (change player
+# 1's input kind, type into player 2's name, pick a key slot), Cancel; open
+# Recording Options, type into the name field, toggle recording, Cancel; hover Game
+# start. (Game start itself allocates the objects, which the trace format cannot
+# show; menu_main starts after it.)
+mode title
+wait 5
+mouse 400 230
+wait 3
+mouse 400 260
+wait 3
+mouse 400 290
+click
+wait 5
+mouse 250 200
+click
+wait 3
+mouse 380 165
+click
+wait 2
+tap p1.attack
+tap p1.jump
+wait 3
+mouse 250 290
+click
+wait 3
+tap p1.left
+wait 3
+mouse 650 460
+click
+wait 5
+mouse 400 320
+click
+wait 5
+mouse 300 216
+click
+wait 2
+tap p1.attack
+tap p1.jump
+wait 2
+mouse 300 400
+click
+wait 3
+mouse 450 430
+click
+wait 5
+mouse 400 230
+wait 10

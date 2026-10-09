@@ -1,0 +1,14 @@
+[package]
+name = "lf2-web"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lf2-data = { path = "../lf2-data" }
+lf2-sim = { path = "../lf2-sim" }
+lf2-app = { path = "../lf2-app", default-features = false }
+wasm-bindgen = "0.2"

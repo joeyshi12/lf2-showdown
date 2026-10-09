@@ -1,0 +1,581 @@
+<!doctype html>
+<!--
+  The page the web build is served as. The layout and colours follow
+  lf2-showdown.online: a dark column 850 px wide on a blue page, the title, the game in a
+  794x550 window at its natural size with a full-screen button, then the controls and
+  credits. The game folder is chosen inside the game window before the game starts.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LF2 Showdown</title>
+<style>
+  :root {
+    --page: #262d4d;
+    --column: #1c2138;
+    --heading: #ffffff;
+    --text: #b9c2de;
+    --muted: #7c88b6;
+    --link: #93a9ff;
+  }
+  html { background: var(--page); }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
+  .strip {
+    box-sizing: border-box;
+    width: 850px;
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 0 28px 48px;
+    background: var(--column);
+  }
+  .page_title {
+    margin: 0;
+    padding: 46px 0 40px;
+    color: var(--heading);
+    font-size: 34px;
+    font-weight: bold;
+    text-align: center;
+  }
+  .stage_slot {
+    position: relative;
+    margin: 0 auto;
+    width: 794px;
+    height: 550px;
+    background: #10206c;
+  }
+  /* The canvas is 794x550 game pixels. Its size on the page is set by fitCanvas() so
+     that each game pixel covers a whole number of screen pixels: on a display scaled
+     by 125% or 150% a size of 794 CSS pixels would give game pixels of uneven widths,
+     which shimmer when the picture moves. */
+  #screen {
+    display: none;
+    width: 794px;
+    height: 550px;
+    image-rendering: pixelated;
+    cursor: none;
+  }
+  #screen:focus, #screen:focus-visible { outline: none; }
+  .stage_slot:fullscreen { width: 100vw; height: 100vh; background: #000; display: flex; align-items: center; justify-content: center; }
+  .fullscreen_button {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 34px;
+    height: 34px;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.25);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0.55;
+    z-index: 30;
+    transition: opacity 0.15s ease;
+  }
+  .fullscreen_button:hover { opacity: 1; }
+  .fullscreen_button svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  #start {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 0 90px;
+    color: #dfe4f5;
+    font-size: 15px;
+    line-height: 1.5;
+    text-align: center;
+  }
+  #start label {
+    padding: 8px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background: #2e3860;
+    color: var(--heading);
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #start label:hover { background: #3a4778; }
+  #start input, #pick { display: none; }
+  #status { min-height: 1.5em; color: var(--muted); }
+  #picker { display: none; flex-direction: column; align-items: center; gap: 14px; }
+  .page_about { padding: 38px 6px 0; color: var(--text); font-size: 14px; line-height: 1.6; }
+  .page_about .lede { margin-top: 0; color: #dfe4f5; font-size: 16px; }
+  .page_about h2 { margin: 26px 0 6px; color: var(--heading); font-size: 15px; font-weight: bold; }
+  .page_about a { color: var(--link); }
+  .page_about kbd {
+    display: inline-block;
+    min-width: 9px;
+    padding: 1px 5px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background: #2e3860;
+    color: var(--heading);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: center;
+  }
+  @media (max-width: 880px) {
+    .strip { width: 100%; padding: 0 12px 32px; }
+    .stage_slot { width: 100%; max-width: 794px; height: auto; aspect-ratio: 794 / 550; }
+    #screen { width: 100% !important; height: auto !important; }
+    #start { padding: 0 16px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="strip">
+  <h1 class="page_title">LF2 Showdown</h1>
+  <div class="stage_slot" id="stage">
+    <canvas id="screen" width="794" height="550" tabindex="0"></canvas>
+    <div id="start">
+      <div id="picker">
+        <p>Choose your Little Fighter 2 v2.0a folder, the one with the data, sprite and bg
+           folders. The files stay in this browser tab.</p>
+        <label>Choose the game folder<input id="folder" type="file" webkitdirectory multiple></label>
+      </div>
+      <div id="status"></div>
+    </div>
+    <button class="fullscreen_button" id="fullscreen" type="button" aria-label="Full screen" title="Full screen">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        <path d="M4.7 4.7l5 5M19.3 4.7l-5 5M4.7 19.3l5-5M19.3 19.3l-5-5" />
+      </svg>
+    </button>
+  </div>
+  <div class="page_about">
+    <p class="lede">Little Fighter 2 v2.0a rebuilt in Rust and running in the browser. The
+      game plays tick for tick as the original does; the advertisements are left out.</p>
+    <h2>Controls</h2>
+    <p>Player 1 moves with <kbd>w</kbd> <kbd>a</kbd> <kbd>s</kbd> <kbd>d</kbd>, attacks
+      with <kbd>j</kbd>, jumps with <kbd>k</kbd> and defends with <kbd>l</kbd>, as in the
+      original's default <code>data/control.txt</code>. The keys of all four players can be
+      changed under control settings on the title screen. Special moves are entered as in
+      the original: defend, then a direction, then attack or jump.</p>
+    <p><kbd>F1</kbd> pauses, <kbd>F2</kbd> runs one frame, <kbd>F4</kbd> returns to the
+      menu, <kbd>F5</kbd> switches the speed, <kbd>F11</kbd> and <kbd>F12</kbd> change the
+      volume. Click the game first so that it gets the keys; browsers also need a click
+      before they play sound.</p>
+    <h2>Music</h2>
+    <p>Browsers cannot play the game's WMA music. Convert it once with
+      <code>tools/convert_bgm.sh</code>, which writes Ogg files next to the WMA files.</p>
+    <h2>Credits</h2>
+    <p>Little Fighter 2 by Marti Wong and Starsky Wong, 1999 to 2008. Game content by the
+      original authors; you need your own copy of the game files.</p>
+  </div>
+</div>
+<input id="pick" type="file" accept=".lfr">
+<script type="module">
+import init, { add_file, Game } from "./pkg/lf2_web.js";
+
+// KeyboardEvent.code to Windows virtual-key codes. Alt and F10 are left out: Windows
+// sends them as WM_SYSKEYDOWN, which the original does not put in its key array.
+const VK = { Enter: 0x0d, NumpadEnter: 0x0d, Space: 0x20, Tab: 0x09, Escape: 0x1b, Backspace: 0x08,
+  ShiftLeft: 0x10, ShiftRight: 0x10, ControlLeft: 0x11, ControlRight: 0x11,
+  ArrowLeft: 0x25, ArrowUp: 0x26, ArrowRight: 0x27, ArrowDown: 0x28,
+  Insert: 0x2d, Delete: 0x2e, Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22,
+  Backquote: 0xc0, Comma: 0xbc, Period: 0xbe, Slash: 0xbf, Semicolon: 0xba, Quote: 0xde,
+  BracketLeft: 0xdb, BracketRight: 0xdd, Backslash: 0xdc, Minus: 0xbd, Equal: 0xbb,
+  NumpadAdd: 0x6b, NumpadSubtract: 0x6d, NumpadMultiply: 0x6a, NumpadDivide: 0x6f, NumpadDecimal: 0x6e };
+function vk(code) {
+  if (code in VK) return VK[code];
+  let m;
+  if ((m = /^Key([A-Z])$/.exec(code))) return m[1].charCodeAt(0);
+  if ((m = /^Digit(\d)$/.exec(code))) return 0x30 + +m[1];
+  if ((m = /^Numpad(\d)$/.exec(code))) return 0x60 + +m[1];
+  if ((m = /^F(\d+)$/.exec(code)) && m[1] !== "10") return 0x6f + +m[1];
+  return -1;
+}
+
+const status = document.getElementById("status");
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+
+// Size the canvas so that one game pixel is a whole number of screen pixels (see the
+// note in the style sheet). In full screen it takes the largest such size that fits.
+function fitCanvas() {
+  if (window.matchMedia("(max-width: 880px)").matches) return;
+  const dpr = window.devicePixelRatio || 1;
+  const full = document.fullscreenElement === stage;
+  const room = full ? Math.min(innerWidth / 794, innerHeight / 550) * dpr : Math.max(1, Math.floor(dpr));
+  const k = Math.max(1, Math.floor(room + 1e-6));
+  canvas.style.width = (794 * k) / dpr + "px";
+  canvas.style.height = (550 * k) / dpr + "px";
+  if (!full) {
+    stage.style.width = canvas.style.width;
+    stage.style.height = canvas.style.height;
+  }
+}
+const stage = document.getElementById("stage");
+window.addEventListener("resize", fitCanvas);
+document.addEventListener("fullscreenchange", fitCanvas);
+document.getElementById("fullscreen").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else stage.requestFullscreen();
+  canvas.focus();
+});
+
+// Smooth motion is used except in F5 fast mode, where ticks come faster than pictures.
+let lastPeriod = 0x21;
+const smoothNow = () => lastPeriod === 0x21;
+let game, files = new Map(), audio, waves = new Map(), voices = new Map(), music = null, musicFile = "";
+
+function norm(p) { return p.replace(/\\/g, "/").toLowerCase(); }
+
+async function wave(name) {
+  const key = norm(name);
+  if (waves.has(key)) return waves.get(key);
+  const bytes = files.get(key);
+  let buf = null;
+  if (bytes) { try { buf = await audio.decodeAudioData(bytes.slice().buffer); } catch (e) { buf = null; } }
+  waves.set(key, buf);
+  return buf;
+}
+
+// one voice per file: playing a sound again restarts it, as with a DirectSound buffer
+async function playSound(name, volumeCb, panCb) {
+  const buf = await wave(name);
+  if (!buf) return;
+  const key = norm(name);
+  if (voices.has(key)) { try { voices.get(key).stop(); } catch (e) {} }
+  const src = audio.createBufferSource();
+  src.buffer = buf;
+  const gain = audio.createGain();
+  gain.gain.value = Math.pow(10, Math.min(0, volumeCb) / 2000);
+  const pan = audio.createStereoPanner();
+  pan.pan.value = Math.max(-1, Math.min(1, panCb / 1500));
+  src.connect(gain).connect(pan).connect(audio.destination);
+  src.start();
+  voices.set(key, src);
+}
+
+async function playMusic(name) {
+  if (name === "") { if (music) music.playing = false; return; }
+  if (name === musicFile && music) { music.playing = true; return; }
+  if (music) { try { music.src.stop(); } catch (e) {} music = null; }
+  musicFile = name;
+  // browsers do not decode WMA: play the Ogg Vorbis file of the same name that
+  // tools/convert_bgm.sh makes, when the folder has it
+  const ogg = name.replace(/\.wma$/i, ".ogg");
+  const buf = (files.has(norm(ogg)) ? await wave(ogg) : null) || await wave(name);
+  if (!buf || musicFile !== name) return;
+  const src = audio.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const gain = audio.createGain();
+  src.connect(gain).connect(audio.destination);
+  src.start();
+  music = { src, gain, playing: true };
+}
+
+// The network game: the byte stream of the game (lf2_sim::net::NetSession) over a
+// WebRTC data channel, set up through the icebreaker rendezvous server with a room
+// code. Offers and answers carry all candidates (icebreaker does not pass trickled
+// ones), so each side waits for candidate gathering to finish first.
+const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.joeyshi.xyz/ws?app=lf2-showdown";
+const net = {
+  ws: null, pc: null, ch: null,
+  gathered(pc) {
+    return new Promise((done) => {
+      if (pc.iceGatheringState === "complete") return done();
+      pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") done(); });
+      setTimeout(done, 3000);
+    });
+  },
+  fail(msg) {
+    if (!game) return;
+    game.net_closed(msg);
+    this.close(true);
+  },
+  channel(ch) {
+    this.ch = ch;
+    ch.binaryType = "arraybuffer";
+    ch.onopen = () => { game.net_connected(); this.flush(); };
+    ch.onmessage = (e) => game.net_data(new Uint8Array(e.data));
+    ch.onclose = () => this.fail("The connection to the other player closed.");
+  },
+  socket(onmsg) {
+    const ws = new WebSocket(RENDEZVOUS);
+    this.ws = ws;
+    ws.onerror = () => this.fail("cannot reach the rendezvous server");
+    ws.onmessage = async (e) => {
+      const m = JSON.parse(e.data);
+      if (m.type === "error") {
+        this.fail(m.reason === "no_room" ? "There is no game with that code." :
+          m.reason === "full" ? "That game already has two players." : (m.message || "rendezvous error"));
+      } else if (m.type === "closed") this.fail("The other player left.");
+      else onmsg(m);
+    };
+    return ws;
+  },
+  host() {
+    this.close(true);
+    game.net_host();
+    let ice = [];
+    const ws = this.socket(async (m) => {
+      if (m.type === "hosted") { ice = m.ice_servers || []; this.code = m.code; game.net_code(m.code); }
+      else if (m.type === "offer" && !this.pc) {
+        const pc = new RTCPeerConnection({ iceServers: ice });
+        this.pc = pc;
+        pc.ondatachannel = (e) => this.channel(e.channel);
+        await pc.setRemoteDescription(m.offer);
+        await pc.setLocalDescription(await pc.createAnswer());
+        await this.gathered(pc);
+        ws.send(JSON.stringify({ type: "answer", seat: m.seat, answer: pc.localDescription }));
+      }
+    });
+    ws.onopen = () => ws.send(JSON.stringify({ type: "host" }));
+  },
+  join(code) {
+    this.close(true);
+    game.net_join();
+    const ws = this.socket(async (m) => {
+      if (m.type === "ice_servers" && !this.pc) {
+        const pc = new RTCPeerConnection({ iceServers: m.ice_servers || [] });
+        this.pc = pc;
+        this.channel(pc.createDataChannel("lf2"));
+        await pc.setLocalDescription(await pc.createOffer());
+        await this.gathered(pc);
+        ws.send(JSON.stringify({ type: "join", code: code.trim().toUpperCase(), offer: pc.localDescription }));
+      } else if (m.type === "answer" && this.pc) {
+        await this.pc.setRemoteDescription(m.answer);
+      }
+    });
+    ws.onopen = () => ws.send(JSON.stringify({ type: "ice" }));
+    // no data channel after 20 s: no direct route between the two networks
+    setTimeout(() => { if (this.pc && (!this.ch || this.ch.readyState !== "open")) this.fail("Could not connect to the other computer."); }, 20000);
+  },
+  close(keepGame) {
+    // no more events from what is being closed (a second "closed" would replace the
+    // first message)
+    for (const x of [this.ch, this.pc, this.ws]) {
+      if (!x) continue;
+      x.onclose = x.onerror = x.onmessage = x.onopen = null;
+      try { x.close(); } catch (e) {}
+    }
+    this.ws = this.pc = this.ch = null;
+    this.pendingOut = [];
+    if (!keepGame && game) game.net_drop();
+  },
+  flush() {
+    if (!game) return;
+    const b = game.net_outgoing();
+    if (b.length) this.pendingOut.push(b);
+    if (this.ch && this.ch.readyState === "open") {
+      for (const x of this.pendingOut) this.ch.send(x);
+      this.pendingOut = [];
+    }
+  },
+  pendingOut: [],
+};
+
+window.lf2Net = net;   // for tests (tools/web/browser_check.mjs)
+window.lf2Game = () => game;
+
+// pictures shown, ticks run and animation frames per second, over the last second
+let rates = { pictures: 0, ticks: 0, frames: 0 };
+// the last smooth pictures: [time, a tick ran in this frame, t]
+const recent = [];
+// for tests (tools/web/browser_check.mjs): what is playing, and the rates
+window.lf2Status = () => ({ music: music ? musicFile : "", musicGain: music ? music.gain.gain.value : 0, audio: audio ? audio.state : "",
+  picturesPerSecond: rates.pictures, ticksPerSecond: rates.ticks, framesPerSecond: rates.frames,
+  recent: recent.map((r) => r.join(":")).join(" ") });
+
+function download(name, bytes) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bytes]));
+  a.download = name;
+  a.click();
+}
+
+// The game files come from the folder picker, or, with ?game=DIR, from DIR on the
+// same server (DIR/files.txt lists the paths, one per line; tools/web/package.sh
+// writes it).
+async function startGame(entries) {
+  status.textContent = `reading ${entries.length} files...`;
+  await init();
+  for (const [rel, bytes] of entries) {
+    files.set(norm(rel), bytes);
+    add_file(rel, bytes);
+  }
+  status.textContent = "loading images...";
+  await new Promise((r) => setTimeout(r, 0));
+  try {
+    game = new Game((Date.now() & 0x7fffffff) >>> 0);
+  } catch (e) {
+    status.textContent = "Could not load the game: " + e;
+    return;
+  }
+  audio = new AudioContext();
+  document.getElementById("start").style.display = "none";
+  canvas.style.display = "block";
+  fitCanvas();
+  canvas.focus();
+  run();
+}
+
+document.getElementById("folder").addEventListener("change", async (ev) => {
+  const entries = [];
+  for (const f of ev.target.files) {
+    // drop the chosen folder's own name from the path
+    const rel = f.webkitRelativePath.split("/").slice(1).join("/");
+    entries.push([rel, new Uint8Array(await f.arrayBuffer())]);
+  }
+  startGame(entries);
+});
+
+// The game files come from the server when it has them: DIR/files.txt lists the
+// paths, one per line (tools/web/package.sh writes it), with DIR "game" unless
+// ?game=DIR says otherwise. Only when the server has no game files does the page ask
+// for the game folder.
+const served = new URLSearchParams(location.search).get("game") || "game";
+const picker = document.getElementById("picker");
+(async () => {
+  let list = null;
+  try {
+    const r = await fetch(served + "/files.txt");
+    if (r.ok) list = (await r.text()).split("\n").filter((l) => l);
+  } catch (e) {}
+  if (!list || !list.length) {
+    picker.style.display = "flex";
+    return;
+  }
+  let done = 0;
+  status.textContent = "Loading the game files...";
+  const entries = await Promise.all(list.map(async (rel) => {
+    const r = await fetch(served + "/" + rel.split("/").map(encodeURIComponent).join("/"));
+    if (!r.ok) throw new Error(rel + ": " + r.status);
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    done++;
+    status.textContent = `Loading the game files... ${Math.round((100 * done) / list.length)}%`;
+    return [rel, bytes];
+  })).catch((e) => { status.textContent = "Could not load the game files: " + e.message; return null; });
+  if (entries) startGame(entries);
+})();
+
+let mouse = { x: 0, y: 0, down: false };
+canvas.addEventListener("mousemove", (e) => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = Math.round((e.clientX - r.left) * canvas.width / r.width);
+  mouse.y = Math.round((e.clientY - r.top) * canvas.height / r.height);
+});
+canvas.addEventListener("mousedown", (e) => { if (e.button === 0) mouse.down = true; audio && audio.resume(); });
+window.addEventListener("mouseup", (e) => { if (e.button === 0) mouse.down = false; });
+canvas.addEventListener("keydown", (e) => { const v = vk(e.code); if (v >= 0) { game.key_down(v); e.preventDefault(); } });
+canvas.addEventListener("keyup", (e) => { const v = vk(e.code); if (v >= 0) { game.key_up(v); e.preventDefault(); } });
+
+const pick = document.getElementById("pick");
+pick.addEventListener("change", async () => {
+  const f = pick.files[0];
+  pick.value = "";
+  if (!f) return;
+  const err = game.play_recording(new Uint8Array(await f.arrayBuffer()));
+  if (err) alert(err);
+  canvas.focus();
+});
+
+const start = performance.now();
+const image = ctx.createImageData(794, 550);
+// The simulation runs one tick per period (33 ms, 3 ms in F5 fast mode), as the
+// original, counted from requestAnimationFrame's clock. With smooth motion every
+// animation frame shows a picture: the pictures run one tick behind the simulation,
+// and an animation frame t ms after a tick shows the tick before it with the objects
+// moved t / period of the way to their positions in that tick (render::Tween). So
+// motion on the screen follows the clock evenly at any display rate. In fast mode
+// each tick shows its own picture, as the original.
+function run() {
+  let next = performance.now(), period = 0x21, tickAt = next, first = true;
+  let count = { pictures: 0, ticks: 0, frames: 0 }, countStart = next;
+  // one tick: "ok", "wait" (a network game waits for the other computer; nothing
+  // ran) or "quit"
+  const tick = () => {
+    const d = new Date();
+    const p = game.step(smoothNow(), mouse.x, mouse.y, mouse.down, Math.floor(performance.now() - start),
+      new Uint16Array([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]));
+    net.flush();
+    const err = game.net_error();
+    if (err) alert(err);
+    if (p === 0) return handleRequests() ? "wait" : "quit";
+    period = p;
+    lastPeriod = period;
+    count.ticks++;
+    for (const line of game.sounds().split("\n")) {
+      if (!line) continue;
+      const [name, vol, pan] = line.split("|");
+      playSound(name, +vol, +pan);
+    }
+    for (const line of game.music().split("\n").slice(0, -1)) playMusic(line);
+    if (music) {
+      // music_play (0x401f30): master * 34 - 3900 hundredths of a decibel, silent at 0
+      const v = game.volume();
+      const level = v < 1 ? 0 : Math.pow(10, Math.min(0, v * 34 - 3900) / 2000);
+      music.gain.gain.value = music.playing ? level : 0;
+    }
+    return handleRequests() ? "ok" : "quit";
+  };
+  // what the frame asked the page to do; false when the game quit
+  const handleRequests = () => {
+    for (const r of game.requests().split("\n")) {
+      if (!r) continue;
+      const [cmd, ...rest] = r.split(" ");
+      const arg = rest.join(" ");
+      if (cmd === "url") { if (arg.startsWith("http")) window.open(arg, "_blank"); }
+      else if (cmd === "message") alert(arg);
+      else if (cmd === "open-recording") pick.click();
+      else if (cmd === "save-recording") download(arg, game.written_file("recording/" + arg));
+      else if (cmd === "net-host") net.host();
+      else if (cmd === "net-join") net.join(arg);
+      else if (cmd === "net-close") net.close();
+      else if (cmd === "quit") {
+        canvas.style.display = "none";
+        const st = document.getElementById("start");
+        st.style.display = "flex";
+        st.innerHTML = "<p>The game has ended. Reload the page to play again.</p>";
+        return false;
+      }
+    }
+    return true;
+  };
+  const show = () => {
+    image.data.set(game.picture());
+    ctx.putImageData(image, 0, 0);
+    count.pictures++;
+  };
+  const frame = (now) => {
+    count.frames++;
+    if (now - countStart >= 1000) {
+      const s = (now - countStart) / 1000;
+      rates = { pictures: count.pictures / s, ticks: count.ticks / s, frames: count.frames / s };
+      count = { pictures: 0, ticks: 0, frames: 0 };
+      countStart = now;
+    }
+    // more than 100 ms behind (a hidden tab): go on from now instead of catching up
+    if (now - next > 100) next = now;
+    let ticked = false;
+    while (now >= next) {
+      const r = tick();
+      if (r === "quit") return;
+      if (r === "wait") break;
+      tickAt = next;
+      next += period;
+      ticked = true;
+    }
+    if (smoothNow()) {
+      if (ticked) first = true;
+      const t = Math.min(1, (now - tickAt) / period);
+      game.draw_smooth(t, first, mouse.x, mouse.y);
+      recent.push([Math.round(now), ticked ? 1 : 0, Math.round(t * 100) / 100]);
+      if (recent.length > 40) recent.shift();
+      first = false;
+      show();
+    } else if (ticked) {
+      // in fast mode several ticks fall in one animation frame; the last one is shown
+      show();
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

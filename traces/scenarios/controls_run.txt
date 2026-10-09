@@ -1,0 +1,145 @@
+# controls_run: Davis (player 1) alone on the left, Woody (player 2) far away.
+# Running by a double tap to the right and to the left, with z movement, stopping by
+# the opposite key, run attack, roll (defend), dash (jump) with z, turning and
+# attacking in the dash, landing (frame 215) into a dash both ways and into a roll,
+# turning while defending, diagonal walking and both walk keys at once.
+p1 23
+p2 22
+rng zero
+place p1 400 300 0
+place p2 1400 300 1
+wait 70
+# double tap right, run, up, down, stop with left
+hold 2 p1.right
+wait 2
+hold 12 p1.right
+hold 6 p1.up
+hold 6 p1.down
+wait 6
+hold 2 p1.left
+wait 30
+# double tap left, run, down, run attack
+hold 2 p1.left
+wait 2
+hold 8 p1.left
+hold 6 p1.down
+hold 2 p1.attack
+wait 40
+# run right, roll
+hold 2 p1.right
+wait 2
+hold 8 p1.right
+hold 2 p1.defend
+wait 40
+# run left, dash up, attack in the dash
+hold 2 p1.left
+wait 2
+hold 8 p1.left
+hold 2 p1.jump p1.up
+wait 4
+hold 2 p1.attack
+wait 40
+# run right, dash down, turn left in the dash, attack backwards, turn back
+hold 2 p1.right
+wait 2
+hold 8 p1.right
+hold 2 p1.jump p1.down
+wait 4
+hold 4 p1.left
+hold 2 p1.attack
+hold 4 p1.right
+wait 40
+# jump, steer left, jump attack
+hold 2 p1.jump
+wait 4
+hold 4 p1.left
+hold 2 p1.attack
+wait 40
+# jump, then keep pressing jump with right until the landing frame turns it into a dash
+hold 2 p1.jump
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 2
+hold 2 p1.jump p1.right
+wait 40
+# the same to the left, with up
+hold 2 p1.jump
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 2
+hold 2 p1.jump p1.left p1.up
+wait 40
+# jump, keep pressing defend: the landing frame turns it into a roll
+hold 2 p1.jump
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.defend
+wait 40
+# defend, turn left and right while defending
+hold 2 p1.defend
+hold 2 p1.defend p1.left
+hold 2 p1.defend p1.right
+wait 20
+# diagonal walking, up and down alone, left and right together
+hold 10 p1.right p1.up
+hold 10 p1.left p1.down
+hold 10 p1.up
+hold 10 p1.down
+hold 10 p1.left p1.right
+hold 10 p1.left p1.right p1.up
+wait 10
+# walk right, turn left at once (resets the run counter), then double tap left
+hold 2 p1.right
+hold 2 p1.left
+wait 2
+hold 10 p1.left
+wait 30

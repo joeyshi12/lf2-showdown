@@ -1,0 +1,73 @@
+# controls_hurt: Woody (player 1) holds and presses keys while Davis (player 2) hits
+# him: right held through three punches and the fall, D>A pressed during the hurt
+# frames, defend pressed while hurt, and jump pressed again and again while knocked
+# into the air by Davis's D>A (rowing on frames 182/188).
+p1 22
+p2 23
+rng zero
+place p1 500 300 1
+place p2 440 300 0
+wait 70
+hold 2 p2.attack
+hold 8 p1.right
+hold 2 p2.attack p1.right
+hold 8 p1.right
+hold 2 p2.attack p1.right
+hold 40 p1.right
+wait 40
+set p1 x 500
+set p2 x 440
+hold 2 p2.attack
+wait 2
+hold 2 p1.defend
+wait 2
+hold 2 p1.left
+wait 2
+hold 2 p1.attack
+wait 6
+hold 2 p2.attack
+hold 2 p1.defend
+wait 60
+set p1 x 520
+set p2 x 400
+set p2 mp 500
+set p1 hp 500
+hold 2 p2.defend
+wait 2
+hold 2 p2.right
+wait 2
+hold 2 p2.attack
+wait 4
+tap p1.jump
+tap p1.jump
+tap p1.jump
+tap p1.jump
+tap p1.jump
+tap p1.jump
+wait 60
+set p1 x 520
+set p2 x 400
+set p2 mp 500
+set p1 hp 500
+hold 2 p2.defend
+wait 2
+hold 2 p2.right
+wait 2
+hold 2 p2.attack
+wait 8
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 2
+hold 2 p1.jump p1.left
+wait 60

@@ -1,0 +1,15 @@
+# weapon_rain: the F8 weapon rain (0x450bb8 = 1) drops every weapon and item twice;
+# the fighters then walk through the items.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 500 300 1
+wait 70
+gset 450bb8 1
+wait 60
+gset 450bb8 1
+wait 60
+hold 60 p1.right p2.left
+hold 6 p1.attack
+wait 100

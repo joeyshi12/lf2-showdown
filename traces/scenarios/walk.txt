@@ -1,0 +1,9 @@
+# Davis (player 1) and Woody (player 2) stand, then each walks.
+p1 23
+p2 22
+rng zero
+wait 10
+hold 30 p1.right
+wait 10
+hold 20 p2.left p2.up
+wait 10

@@ -1,0 +1,14 @@
+# match_end: player 2 has 1 hp and is punched; the match is decided (end_timer counts,
+# m_end.wav and slow frames at 80), player 1 presses attack after 143 so end_timer
+# jumps to 350. The trace stops before the frame that leaves the match, because the
+# result screen (not ported yet) runs in that same frame.
+p1 23
+p2 23
+rng zero
+place p1 300 300 0
+place p2 350 300 1
+wait 70
+set p2 hp 1
+hold 4 p1.attack
+wait 200
+hold 3 p1.attack

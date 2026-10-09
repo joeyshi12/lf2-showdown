@@ -1,0 +1,19 @@
+# Davis (player 1) walks to Woody (player 2) and punches; Woody is hit, falls after
+# the third hit, and gets up.
+p1 23
+p2 22
+rng zero
+place p1 440 300 0
+place p2 500 300 1
+wait 70
+wait 2
+hold 2 p1.attack
+wait 8
+hold 2 p1.attack
+wait 8
+hold 2 p1.attack
+wait 8
+hold 2 p1.attack
+wait 8
+hold 2 p1.attack
+wait 60

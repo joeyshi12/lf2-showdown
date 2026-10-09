@@ -1,0 +1,8 @@
+[package]
+name = "lf2-sim"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+lf2-data = { path = "../lf2-data" }

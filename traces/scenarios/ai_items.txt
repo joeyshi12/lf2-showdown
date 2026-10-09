@@ -1,0 +1,40 @@
+# ai_items: computer Deep and computer Henry with an idle human Davis; the F8 weapon rain
+# drops all weapons and drinks every 200 frames, so the AI picks up and drinks them.
+p1 23
+p2 none
+com 14
+com 16
+difficulty 2
+rng zero
+place p1 200 300 0
+place o11 400 300 1
+place o12 600 350 1
+wait 70
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200
+gset 450bb8 1
+set o11 hp 300
+set o12 hp 300
+wait 200

@@ -1,0 +1,36 @@
+[package]
+name = "lf2-app"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "lf2"
+path = "src/main.rs"
+required-features = ["native"]
+
+[features]
+default = ["native"]
+# the desktop program: window (minifb), sound (cpal) and the platform helpers
+native = ["dep:minifb", "dep:cpal", "dep:symphonia", "dep:str0m", "dep:tungstenite", "dep:serde_json", "dep:rustls"]
+
+[dependencies]
+lf2-data = { path = "../lf2-data" }
+lf2-sim = { path = "../lf2-sim" }
+minifb = { version = "0.27", optional = true }
+cpal = { version = "0.15", optional = true }
+# decodes the bgm after tools/convert_bgm.sh made Ogg Vorbis files of it
+symphonia = { version = "0.5", optional = true, default-features = false, features = ["ogg", "vorbis"] }
+# the network game over WebRTC: a sans-IO WebRTC stack in pure Rust, and the
+# WebSocket to the rendezvous server (icebreaker)
+str0m = { version = "0.24", optional = true, default-features = false, features = ["rust-crypto"] }
+tungstenite = { version = "0.30", optional = true, features = ["rustls-tls-webpki-roots"] }
+serde_json = { version = "1", optional = true }
+# the TLS crypto for the WebSocket (wss://)
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12"] }
+
+[target.'cfg(windows)'.dependencies]
+# 0.48 links through import libraries (newer versions need dlltool to cross-build)
+windows-sys = { version = "0.48", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi"] }
+# the version cpal already uses; Media Foundation decodes the WMA bgm
+windows = { version = "0.54", features = ["Win32_Media_MediaFoundation", "Win32_System_Com"] }

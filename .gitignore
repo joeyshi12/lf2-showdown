@@ -1,0 +1,11 @@
+/target
+target/
+/re/ghidra-project
+/re/out
+/re/*.log
+__pycache__/
+*.pyc
+/scratch
+/scratch.env
+/dist
+/game

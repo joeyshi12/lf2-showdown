@@ -1,0 +1,105 @@
+# controls_timing: Davis (player 1) against Woody (player 2), mp refilled before each
+# input. One-frame key presses on both frame parities (keys are read every second
+# frame), a special move whose last key is held for one frame only (both parities),
+# long pauses between the keys of a sequence, a sequence broken by another key,
+# defend held through a sequence, keys of a sequence pressed together, and attack
+# held down.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 420 300 1
+wait 70
+# one-frame attack presses, one frame apart
+hold 1 p1.attack
+wait 30
+wait 1
+hold 1 p1.attack
+wait 30
+hold 1 p1.jump
+wait 40
+wait 1
+hold 1 p1.jump
+wait 40
+# D>A with a one-frame A, on both parities
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 1 p1.attack
+wait 80
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 3
+hold 1 p1.attack
+wait 80
+# D, long pause, >, long pause, A
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 40
+hold 2 p1.right
+wait 40
+hold 2 p1.attack
+wait 80
+# D, J, >, A: DJA advances, D>A is broken by the jump
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 2
+hold 2 p1.jump
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.attack
+wait 80
+# defend held through D^A
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 4 p1.defend
+hold 4 p1.defend p1.up
+hold 2 p1.defend p1.up p1.attack
+wait 80
+# D, then > and A together
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 2
+hold 2 p1.right p1.attack
+wait 80
+# D and v together, then A
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend p1.down
+wait 2
+hold 2 p1.attack
+wait 80
+# D, v, J with the jump key held long
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+hold 2 p1.defend
+wait 2
+hold 2 p1.down
+wait 2
+hold 30 p1.jump
+wait 60
+# attack held down for a long time, then right held while attacking
+set p1 x 300
+set p2 x 420
+hold 40 p1.attack
+wait 10
+hold 20 p1.right p1.attack
+wait 40

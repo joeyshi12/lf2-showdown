@@ -1,0 +1,38 @@
+# menu_pick_com: VS mode with one human (Team 1) and two computer players: the first
+# picks a fighter and Team 2, the second stays Random and Independent; back once in
+# the computer choice; the menu: difficulty, Reset Random, Fight!, first match frames.
+mode menu
+wait 5
+tap p1.attack
+wait 10
+tap p1.attack
+tap p1.right
+tap p1.right
+tap p1.attack
+tap p1.right
+tap p1.attack
+wait 200
+tap p1.right
+tap p1.right
+tap p1.attack
+tap p1.right
+tap p1.attack
+tap p1.right
+tap p1.right
+tap p1.attack
+tap p1.attack
+tap p1.jump
+tap p1.attack
+tap p1.attack
+wait 5
+tap p1.down
+tap p1.down
+tap p1.attack
+tap p1.attack
+tap p1.up
+tap p1.up
+tap p1.attack
+tap p1.up
+tap p1.up
+tap p1.attack
+wait 60

@@ -1,0 +1,127 @@
+# stage_1_clear: stage mode 1-1 to 1-2: computer Davis and Firen, every 300 frames the
+# enemies' hp is set to 1 so the phases are cleared; after the last phase everyone is
+# moved past its bound (2200) so the fade to stage 1-2 runs.
+mode stage
+p1 23
+p2 none
+com 23
+com 19
+difficulty 2
+rng zero
+wait 30
+set p1 hp 1
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+set p1 x 2300
+set o11 x 2300
+set o12 x 2300
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150
+set o11 hp 500
+set o12 hp 500
+set o11 mp 500
+set o12 mp 500
+wait 150
+teamhp 5 1
+wait 150

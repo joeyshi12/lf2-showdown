@@ -1,0 +1,68 @@
+# controls_dennis_foot: Dennis (player 1) does D>J (frames 280-287); frames 284-287
+# have dvz, which up and down steer: up held, down held, up held and then down pressed
+# as well (the key pressed later wins), and both pressed on the same frame. Jump
+# (hit_j 288) and defend (hit_d 288) stop the move. Woody (player 2) stands far away.
+p1 21
+p2 22
+rng zero
+place p1 300 300 0
+place p2 1200 300 1
+wait 70
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+hold 30 p1.up
+wait 50
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+hold 30 p1.down
+wait 50
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+hold 12 p1.up
+hold 18 p1.up p1.down
+wait 50
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+wait 4
+hold 20 p1.up p1.down
+wait 50
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+wait 12
+hold 2 p1.jump
+wait 50
+set p1 mp 500
+set p1 x 300
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+wait 12
+hold 2 p1.defend
+wait 50

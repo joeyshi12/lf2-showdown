@@ -1,0 +1,9 @@
+# battle_1: battle mode with the default armies (Balanced (S) on both sides), the human
+# Davis on team 1 standing still and a computer Firen leading team 2.
+mode battle
+p1 23
+p2 none
+com 19
+difficulty 2
+rng zero
+wait 1500

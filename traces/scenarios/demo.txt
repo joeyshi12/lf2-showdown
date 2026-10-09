@@ -1,0 +1,10 @@
+# demo: the main menu Demo item: eight random computer players fight.
+mode menu
+wait 5
+tap p1.down
+tap p1.down
+tap p1.down
+tap p1.down
+tap p1.down
+tap p1.attack
+wait 600

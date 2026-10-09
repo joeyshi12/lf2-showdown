@@ -1,0 +1,22 @@
+# Woody defends against Davis's punches; then Davis steps back, runs at Woody,
+# jumps into a dash and attacks during the dash.
+p1 23
+p2 22
+rng zero
+place p1 440 300 0
+place p2 500 300 1
+wait 70
+hold 2 p2.defend
+hold 2 p1.attack
+wait 10
+hold 2 p2.defend
+hold 2 p1.attack
+wait 20
+hold 30 p1.left
+hold 2 p1.right
+wait 2
+hold 12 p1.right
+hold 2 p1.right p1.jump
+hold 4 p1.right
+hold 2 p1.right p1.attack
+wait 50

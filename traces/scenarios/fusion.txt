@@ -1,0 +1,18 @@
+# fusion: Firen and Freeze on the same team with low hp run into each other and become
+# Firzen (in slot 1); its timer 0x338 is then set to 5 so it splits back.
+p1 19
+p2 20
+rng zero
+place p1 250 300 0
+place p2 550 300 1
+wait 70
+set p1 0x364 1
+set p2 0x364 1
+set p1 hp 150
+set p2 hp 150
+hold 2 p1.right p2.left
+wait 2
+hold 40 p1.right p2.left
+wait 400
+set p2 0x338 5
+wait 300

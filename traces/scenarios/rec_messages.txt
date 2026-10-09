@@ -1,0 +1,27 @@
+# rec_messages: recording on (0x450be4). From the main menu, VS with two humans,
+# Fight!; the "Start recording" message counts 0x450b6c up to 0xf0 and stops. Then
+# F12 and F11 change the volume (0x44d000) and show it for 100 frames.
+mode menu
+gset 450be4 1
+wait 3
+tap p1.attack
+wait 10
+tap p1.attack
+tap p1.attack
+tap p1.attack
+tap p2.attack
+tap p2.attack
+tap p2.attack
+tap p2.attack
+wait 200
+tap p1.attack
+wait 5
+tap p1.up
+tap p1.up
+tap p1.attack
+wait 270
+tap vk.0x7b
+tap vk.0x7b
+wait 20
+tap vk.0x7a
+wait 110

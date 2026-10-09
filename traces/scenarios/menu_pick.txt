@@ -1,0 +1,39 @@
+# menu_pick: VS mode from the main menu. Player 1 joins, picks a fighter and Team 1;
+# player 2 joins, leaves the fighter on Random and the team on Independent; after the
+# countdown one computer player is chosen (fighter, team), then the menu: background
+# forward twice, music left, Fight!, and the first frames of the match.
+mode menu
+wait 5
+tap p1.attack
+wait 10
+tap p1.attack
+tap p1.right
+tap p1.right
+tap p1.right
+tap p1.left
+tap p1.attack
+tap p1.right
+tap p1.attack
+tap p2.attack
+tap p2.up
+tap p2.attack
+tap p2.attack
+wait 200
+tap p1.right
+tap p1.left
+tap p1.attack
+tap p1.right
+tap p1.right
+tap p1.attack
+tap p1.left
+tap p1.attack
+wait 5
+tap p1.down
+tap p1.attack
+tap p1.attack
+tap p1.left
+tap p1.up
+tap p1.up
+tap p1.up
+tap p1.attack
+wait 40

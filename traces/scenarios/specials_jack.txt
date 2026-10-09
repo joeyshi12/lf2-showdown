@@ -1,0 +1,77 @@
+# jack: every special input once, mp refilled before each, against Davis.
+p1 10
+p2 23
+rng zero
+place p1 300 300 0
+place p2 420 300 1
+wait 70
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.attack
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.up
+wait 2
+hold 2 p1.attack
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.down
+wait 2
+hold 2 p1.attack
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.jump
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.up
+wait 2
+hold 2 p1.jump
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.down
+wait 2
+hold 2 p1.jump
+wait 84
+set p1 mp 500
+set p1 x 300
+set p2 x 420
+set p2 hp 500
+hold 2 p1.defend
+wait 2
+hold 2 p1.jump
+wait 2
+hold 2 p1.attack
+wait 84

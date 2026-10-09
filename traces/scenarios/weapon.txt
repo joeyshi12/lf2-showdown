@@ -1,0 +1,17 @@
+# A weapon drops next to Davis (about tick 330). Davis picks it up with attack, swings
+# it at Woody twice, then walks and throws it.
+p1 23
+p2 22
+rng zero
+place p1 1290 424 0
+place p2 1345 424 1
+wait 370
+hold 2 p1.attack
+wait 20
+hold 2 p1.attack
+wait 20
+hold 2 p1.attack
+wait 40
+hold 6 p1.right
+hold 2 p1.right p1.attack
+wait 60

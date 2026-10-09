@@ -1,0 +1,8 @@
+# Nobody moves; after about 330 ticks the RNG chooses to drop a weapon, which falls,
+# bounces and comes to rest.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 500 300 1
+wait 420

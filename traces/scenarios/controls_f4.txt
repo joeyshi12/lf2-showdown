@@ -1,0 +1,22 @@
+# controls_f4: F6 turns the mp cost off, Davis (player 1) runs, dashes and attacks in
+# the dash (frame 90 without mp), then F4 leaves the match for the main menu, with
+# Davis still holding right.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 1000 300 1
+wait 70
+hold 2 vk.75
+wait 4
+hold 2 p1.right
+wait 2
+hold 8 p1.right
+hold 2 p1.jump
+wait 4
+hold 2 p1.attack
+wait 40
+hold 4 p1.right
+hold 2 p1.right vk.73
+hold 10 p1.right
+wait 20

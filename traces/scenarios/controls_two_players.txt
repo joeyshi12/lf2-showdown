@@ -1,0 +1,37 @@
+# controls_two_players: Davis (player 1) and Firen (player 2) press keys on the same
+# frames: walk towards each other, punch at once, jump at once, defend at once, then
+# both do D>A (Firen facing left does D<A) on the same frames, and both run.
+p1 23
+p2 19
+rng zero
+place p1 300 300 0
+place p2 520 300 1
+wait 70
+hold 16 p1.right p2.left
+wait 4
+hold 2 p1.attack p2.attack
+wait 20
+hold 2 p1.jump p2.jump
+wait 40
+hold 2 p1.defend p2.defend
+wait 20
+set p1 mp 500
+set p2 mp 500
+set p1 x 300
+set p2 x 520
+hold 2 p1.defend p2.defend
+wait 2
+hold 2 p1.right p2.left
+wait 2
+hold 2 p1.attack p2.attack
+wait 90
+set p1 x 300
+set p2 x 700
+hold 2 p1.right p2.left
+wait 2
+hold 10 p1.right p2.left
+hold 2 p1.up p2.down
+wait 40
+hold 4 p1.left p1.up p2.right p2.down
+hold 2 p1.attack p2.jump
+wait 60

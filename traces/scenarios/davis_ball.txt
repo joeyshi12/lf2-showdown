@@ -1,0 +1,20 @@
+# Davis throws an energy ball (defend, right, attack) at Woody; Woody is hit by it.
+# Then Davis does the dragon punch (defend, up, attack) while Woody gets up.
+p1 23
+p2 22
+rng zero
+place p1 300 300 0
+place p2 500 300 1
+wait 70
+hold 2 p1.defend
+wait 2
+hold 2 p1.right
+wait 2
+hold 2 p1.attack
+wait 60
+hold 2 p1.defend
+wait 2
+hold 2 p1.up
+wait 2
+hold 2 p1.attack
+wait 60
