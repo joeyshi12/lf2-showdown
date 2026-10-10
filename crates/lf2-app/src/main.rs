@@ -359,6 +359,13 @@ fn main() {
             platform::message(&e);
         }
         if !stepped {
+            // Ctrl+V pastes a room code on the client screen
+            let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
+            if ctrl && events.contains(&(b'V', true)) {
+                if let Some(text) = platform::clipboard_text() {
+                    lf2_sim::menu::title::paste_room_code(&mut world, &text);
+                }
+            }
             apply_events(&mut events, &mut keys, &mut world.g);
             if let Some((mx, my)) = window.get_mouse_pos(minifb::MouseMode::Clamp) {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx as i32);

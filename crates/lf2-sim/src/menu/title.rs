@@ -25,6 +25,24 @@ pub fn set_screen(w: &mut World, v: i32) {
     w.tw(SCREEN, v);
 }
 
+/// Paste `text` into the room code on the client screen: letters as capitals,
+/// spaces and other characters that are not printable ASCII left out, up to the
+/// field's 50 characters. Nothing happens on other screens.
+pub fn paste_room_code(w: &mut World, text: &str) {
+    if w.t(SCREEN) != 3 || w.t(0x4511b0) != 0 {
+        return;
+    }
+    for c in text.bytes().filter(|c| c.is_ascii_graphic()) {
+        let n = w.t(0x4511dc);
+        if n >= 0x32 {
+            break;
+        }
+        w.g.m.set_u8(crate::net::SERVER_IP + n as u32, c.to_ascii_uppercase());
+        w.g.m.set_u8(crate::net::SERVER_IP + n as u32 + 1, 0);
+        w.tw(0x4511dc, n + 1);
+    }
+}
+
 /// `key_char` (0x422f60): the character a key types (caps lock taken as off).
 pub fn key_char(vk: i32, shift: bool) -> u8 {
     let c = vk as u8;
@@ -797,13 +815,19 @@ impl World {
                 self.text(&ip, 0x501e00, 0xffffff, 0x153, 0x147);
             }
         }
-        // typing the address
+        // typing the room code, in capitals (the original types the address as
+        // key_char gives it); with Ctrl held nothing is typed, so Ctrl+V only pastes
         let shift = self.g.m.u8(KEYS + 0x10) == b'd';
+        let ctrl = self.g.m.u8(KEYS + 0x11) == b'd';
         for vk in 0..300u32 {
             if self.g.m.u8(KEYS + vk) != b'd' {
                 continue;
             }
-            let c = key_char(vk as i32, shift);
+            if ctrl && vk != 0x11 {
+                self.g.m.set_u8(KEYS + vk, b'u');
+                continue;
+            }
+            let c = key_char(vk as i32, shift).to_ascii_uppercase();
             let n = self.t(0x4511dc);
             if c != 0 && vk != 8 {
                 if n < 0x32 && vk != 0xd {

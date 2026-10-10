@@ -465,8 +465,19 @@ canvas.addEventListener("mousemove", (e) => {
 });
 canvas.addEventListener("mousedown", (e) => { if (e.button === 0) mouse.down = true; audio && audio.resume(); });
 window.addEventListener("mouseup", (e) => { if (e.button === 0) mouse.down = false; });
-canvas.addEventListener("keydown", (e) => { const v = vk(e.code); if (v >= 0) { game.key_down(v); e.preventDefault(); } });
+canvas.addEventListener("keydown", (e) => {
+  // Ctrl+V (Cmd+V) is left to the browser, which then sends the paste event below
+  if ((e.ctrlKey || e.metaKey) && e.code === "KeyV") return;
+  const v = vk(e.code);
+  if (v >= 0) { game.key_down(v); e.preventDefault(); }
+});
 canvas.addEventListener("keyup", (e) => { const v = vk(e.code); if (v >= 0) { game.key_up(v); e.preventDefault(); } });
+// pasting a room code on the client screen
+document.addEventListener("paste", (e) => {
+  if (!game) return;
+  game.paste(e.clipboardData.getData("text"));
+  e.preventDefault();
+});
 
 const pick = document.getElementById("pick");
 pick.addEventListener("change", async () => {

@@ -123,7 +123,29 @@ fn server_and_client_stay_in_step() {
         p.c.set_keys(&keys);
         p.c.step();
     }
-    assert_eq!(p.c.room_code_typed().to_ascii_uppercase(), "AB2C");
+    // typed in capitals without Shift
+    assert_eq!(p.c.room_code_typed(), "AB2C");
+    // Ctrl+V types nothing; a paste adds the text in capitals, without spaces
+    keys[0x11] = b'd';
+    keys[b'V' as usize] = b'd';
+    p.c.set_keys(&keys);
+    p.c.step();
+    keys[0x11] = b'u';
+    keys[b'V' as usize] = b'u';
+    p.c.set_keys(&keys);
+    p.c.step();
+    assert_eq!(p.c.room_code_typed(), "AB2C");
+    lf2_sim::menu::title::paste_room_code(&mut p.c, " x9 ");
+    assert_eq!(p.c.room_code_typed(), "AB2CX9");
+    for _ in 0..2 {
+        keys[0x08] = b'd';
+        p.c.set_keys(&keys);
+        p.c.step();
+        keys[0x08] = b'u';
+        p.c.set_keys(&keys);
+        p.c.step();
+    }
+    assert_eq!(p.c.room_code_typed(), "AB2C");
     keys[0x0d] = b'd';
     p.c.set_keys(&keys);
     p.c.step();

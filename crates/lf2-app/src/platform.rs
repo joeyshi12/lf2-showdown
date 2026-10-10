@@ -62,6 +62,26 @@ pub fn message(text: &str) {
     };
 }
 
+/// The clipboard's text, from the desktop's clipboard program (PowerShell on
+/// Windows; wl-paste, xclip or xsel on Linux). None when there is none.
+pub fn clipboard_text() -> Option<String> {
+    let tries: &[(&str, &[&str])] = if cfg!(target_os = "windows") {
+        &[("powershell", &["-NoProfile", "-Command", "Get-Clipboard"])]
+    } else if cfg!(target_os = "macos") {
+        &[("pbpaste", &[])]
+    } else {
+        &[("wl-paste", &["--no-newline"]), ("xclip", &["-o", "-selection", "clipboard"]), ("xsel", &["-b", "-o"])]
+    };
+    for (prog, args) in tries {
+        if let Ok(out) = Command::new(prog).args(*args).output() {
+            if out.status.success() {
+                return Some(String::from_utf8_lossy(&out.stdout).into_owned());
+            }
+        }
+    }
+    None
+}
+
 /// ShellExecuteA "open": a web page or a folder.
 pub fn open(target: &str) {
     let prog = if cfg!(target_os = "windows") {
