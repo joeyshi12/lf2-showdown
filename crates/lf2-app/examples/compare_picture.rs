@@ -35,7 +35,7 @@ fn write_ppm(p: &str, w: usize, h: usize, px: &[u32]) {
 fn main() {
     let prefix = std::env::args().nth(1).unwrap();
     let dir = lf2_data::game_dir_from_env().unwrap();
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let t = lf2_sim::trace::Trace::load(std::path::Path::new(&format!("{}.lf2t", prefix)), &exe).unwrap();
     let mut w = lf2_sim::World::from_snapshot(&t.frames[0].state, gd.clone());

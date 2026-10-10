@@ -45,7 +45,7 @@ fn main() {
     let host = a.get(1).map(|s| s == "host").unwrap_or(true);
     let exchanges: u32 = std::env::var("EXCHANGES").ok().and_then(|s| s.parse().ok()).unwrap_or(400);
     let dir = lf2_data::game_dir_from_env().expect("set LF2_DIR");
-    let exe = lf2_app::exe_image::built_in().map(|i| i.to_vec()).unwrap_or_else(|| std::fs::read(dir.join("lf2.exe")).unwrap());
+    let exe = lf2_app::exe_image::built_in().map(|i| i.to_vec()).unwrap_or_else(|| lf2_data::read_exe(&dir).unwrap());
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let controls = lf2_data::controls::load(&dir).unwrap_or_default();
     let mut w = World::new_title(gd, &exe, &controls, None, if host { 1 } else { 2 });

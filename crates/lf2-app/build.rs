@@ -2,8 +2,9 @@
 //! does not read lf2.exe when it runs and can itself be named lf2.exe. Kept: the PE
 //! headers, the initial .data section (globals, the .lfr key) and .rsrc (the bitmaps
 //! the menus use), at their file offsets. The code sections (.text, .rdata) are left
-//! as zeros. The original comes from LF2_EXE, or LF2_DIR/lf2.exe; without either the
-//! image is empty and the program reads lf2.exe from the game folder instead.
+//! as zeros. The original comes from LF2_EXE, LF2_DIR/lf2.exe or LF2_DIR/lf2_image.bin;
+//! without those the image is empty and the program reads lf2.exe from the game
+//! folder instead.
 use std::path::PathBuf;
 
 fn u16le(d: &[u8], o: usize) -> usize {
@@ -42,7 +43,12 @@ fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("lf2_image.bin");
     let src = std::env::var_os("LF2_EXE")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LF2_DIR").map(|d| PathBuf::from(d).join("lf2.exe")));
+        .or_else(|| {
+            // a game folder's lf2.exe, or the repository's game/lf2_image.bin, which
+            // already holds only the parts kept here
+            let d = PathBuf::from(std::env::var_os("LF2_DIR")?);
+            [d.join("lf2.exe"), d.join("lf2_image.bin")].into_iter().find(|p| p.exists())
+        });
     let Some(exe) = src.and_then(|p| {
         println!("cargo:rerun-if-changed={}", p.display());
         std::fs::read(p).ok()

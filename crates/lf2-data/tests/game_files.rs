@@ -1,5 +1,5 @@
 //! Checks against the files of an installed game. Set `LF2_DIR` to the folder that
-//! holds `lf2.exe`; without it these tests print a note and pass.
+//! holds `lf2.exe` or `lf2_image.bin`; without it these tests print a note and pass.
 
 use lf2_data::*;
 use std::path::PathBuf;
@@ -99,7 +99,7 @@ fn every_bitmap_decodes() {
         }
     }
     assert!(n > 400, "only {} bitmaps", n);
-    let exe = std::fs::read(d.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&d).unwrap();
     let res = image::pe_bitmaps(&exe);
     for name in ["FRAME", "WORDS0", "BARS", "SPARK", "SHADOW1", "PAUSE"] {
         let (_, dib) = res.iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("resource {}", name));

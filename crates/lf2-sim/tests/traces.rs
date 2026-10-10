@@ -13,7 +13,7 @@ fn recorded_traces_match_the_original() {
         return;
     };
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../traces");
     let mut paths: Vec<_> = std::fs::read_dir(&root)
         .unwrap()

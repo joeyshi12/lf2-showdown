@@ -12,7 +12,7 @@ rm -rf "$out/pkg" && cp -r "$pkg" "$out/pkg"
 if [ -n "$game" ]; then
   rm -rf "$out/game" && cp -r "$game" "$out/game"
   # the web build has the parts of lf2.exe it needs built in
-  rm -f "$out/game/lf2.exe" "$out/game/lf2"
+  rm -f "$out/game/lf2.exe" "$out/game/lf2_image.bin" "$out/game/lf2"
   # browsers cannot play WMA: keep only the Ogg files of tools/convert_bgm.sh
   for f in "$out"/game/bgm/*.wma; do
     [ -f "${f%.wma}.ogg" ] && rm -f "$f"

@@ -2,7 +2,7 @@
 #[test]
 fn demo_recordings_round_trip() {
     let Some(dir) = lf2_data::game_dir_from_env() else { return };
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let mut n = 0;
     for e in std::fs::read_dir(dir.join("recording")).unwrap() {
         let p = e.unwrap().path();

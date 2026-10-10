@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[test]
 fn paused_frames_report_no_sounds() {
     let Some(dir) = lf2_data::game_dir_from_env() else { return };
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let davis = gd.objects.iter().position(|o| o.kind == 0 && o.name == b"Davis").unwrap();
     let f = |slot, x| Fighter { slot, data: davis, team: 0, human: true, pos: Some((x, 400)) };
