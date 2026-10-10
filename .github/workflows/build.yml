@@ -1,6 +1,7 @@
 name: build
 
-# The Linux and Windows programs, uploaded as artifacts of the run. The tests replay the traces
+# The Linux and Windows programs, uploaded as artifacts of the run. On a `v*` tag they are
+# also put on a GitHub release for that tag, which the web page links to. The tests replay the traces
 # against the game in game/, and the build puts game/lf2_image.bin (the parts of lf2.exe the
 # port uses) into the program, so the program can replace lf2.exe in a game folder.
 
@@ -73,3 +74,22 @@ jobs:
           name: lf2-windows-x86_64
           path: target/x86_64-pc-windows-gnu/release/lf2.exe
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "LF2 Showdown ${GITHUB_REF_NAME#v}" --generate-notes \
+            artifacts/lf2-linux-x86_64/lf2 artifacts/lf2-windows-x86_64/lf2.exe

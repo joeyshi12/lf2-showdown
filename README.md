@@ -16,8 +16,9 @@ the programs at it with `LF2_DIR=$PWD/game`.
 - Music: `game/bgm/` has the music as Ogg. For another copy of the game, run
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.
-- Network game: on the title screen choose "network game". The host picks "server"
-  and gets a room code; the other player picks "client" and types it. Desktop and
+- Network game: on the title screen choose "network game". The host picks "Waiting
+  for Opponent" and gets a room code; the other player picks "Connect to Opponent"
+  and types it. Desktop and
   browser can play each other. The connection is peer to peer (WebRTC) and is set up
   through `wss://rv.lf2-showdown.online/ws?app=lf2-showdown` (change it with
   `LF2_RENDEZVOUS` on the desktop or `?rendezvous=` on the web page).
