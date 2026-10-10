@@ -28,6 +28,10 @@ pub struct Game {
     exe: Vec<u8>,
     mouse_was_down: bool,
     keys: [u8; 256],
+    /// Key events (virtual-key code, down) not given to the world yet. While a
+    /// network game waits for the other computer they are kept for the next frame,
+    /// as the desktop program does.
+    events: Vec<(u8, bool)>,
     /// The last tick kept for pictures between ticks (see `render::Tween`).
     tween: render::Tween,
     /// The network game's byte stream; the page carries it over WebRTC.
@@ -73,6 +77,7 @@ impl Game {
             exe,
             mouse_was_down: false,
             keys: [b'u'; 256],
+            events: Vec::new(),
             tween: render::Tween::new(),
             net: None,
             net_smooth: false,
@@ -109,6 +114,20 @@ impl Game {
             w.g.m.set_i32(MOUSE_CLICK, 0);
         }
         self.mouse_was_down = mouse_down;
+        let kb = lf2_sim::world::KEYS;
+        for (i, &k) in self.keys.iter().enumerate() {
+            w.g.m.set_u8(kb + i as u32, k);
+        }
+        for (vk, down) in self.events.drain(..) {
+            if down {
+                lf2_sim::input::key_down(&mut w.g, vk);
+            } else {
+                lf2_sim::input::key_up(&mut w.g, vk);
+            }
+        }
+        for (i, k) in self.keys.iter_mut().enumerate() {
+            *k = w.g.m.u8(kb + i as u32);
+        }
         w.set_keys(&self.keys);
         w.time_ms = time_ms;
         if local_time.len() >= 6 {
@@ -245,18 +264,16 @@ impl Game {
     /// As the window procedure does (lf2_sim::input): also follows the typed words
     /// "lf2.net" and "herofighter.com".
     pub fn key_down(&mut self, vk: u8) {
-        let kb = lf2_sim::world::KEYS;
-        for (i, &k) in self.keys.iter().enumerate() {
-            self.world.g.m.set_u8(kb + i as u32, k);
-        }
-        lf2_sim::input::key_down(&mut self.world.g, vk);
-        for (i, k) in self.keys.iter_mut().enumerate() {
-            *k = self.world.g.m.u8(kb + i as u32);
-        }
+        self.events.push((vk, true));
     }
 
     pub fn key_up(&mut self, vk: u8) {
-        self.keys[vk as usize] = b'u';
+        self.events.push((vk, false));
+    }
+
+    /// Text pasted from the clipboard: goes into the room code on the client screen.
+    pub fn paste(&mut self, text: &str) {
+        lf2_sim::menu::title::paste_room_code(&mut self.world, text);
     }
 
     /// The picture last drawn (by `step` or `draw_smooth`): 794 x 550 RGBA.

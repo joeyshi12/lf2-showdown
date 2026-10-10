@@ -2,7 +2,8 @@
 // program (examples/net_peer) through the rendezvous server. The browser hosts
 // (clicks "network game", "server") or joins (types the code net_peer printed);
 // then the digests of the objects after each packet exchange, from both sides,
-// must be the same.
+// must be the same. With PRESS=1 the browser joins and taps attack (j) every 450 ms
+// during the game; the desktop side reports how many exchanges brought it.
 // usage: node tools/web/net_check.mjs URL host|join EXCHANGES
 // (URL e.g. http://127.0.0.1:8080/; needs chromium, LF2_DIR and a built net_peer)
 import { spawn } from "child_process";
@@ -68,7 +69,12 @@ peer.stderr.on("data", (d) => process.stderr.write("peer: " + d));
 const peerLines = [];
 const rl = readline.createInterface({ input: peer.stdout });
 let peerCode = null;
-rl.on("line", (l) => { if (l.startsWith("code ")) peerCode = l.slice(5); else if (l.includes("digest")) peerLines.push(l); });
+let remoteAttacks = null;
+rl.on("line", (l) => {
+  if (l.startsWith("code ")) peerCode = l.slice(5);
+  else if (l.includes("digest")) peerLines.push(l);
+  else if (l.startsWith("remote attack exchanges: ")) remoteAttacks = +l.slice(25);
+});
 if (role === "join") {
   for (let i = 0; i < 100 && !peerCode; i++) await sleep(100);
   console.log("desktop hosts room", peerCode);
@@ -77,7 +83,17 @@ if (role === "join") {
   await key("Enter", "Enter", 0x0d);
 }
 const t0 = Date.now();
-while (peerLines.length < N && Date.now() - t0 < 90000) await sleep(500);
+let taps = 0;
+while (peerLines.length < N && Date.now() - t0 < 90000) {
+  if (process.env.PRESS && peerLines.length > 0) {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", code: "KeyJ", key: "j", windowsVirtualKeyCode: 0x4a });
+    await sleep(150);
+    await send("Input.dispatchKeyEvent", { type: "keyUp", code: "KeyJ", key: "j", windowsVirtualKeyCode: 0x4a });
+    taps++;
+    await sleep(300);
+  } else await sleep(500);
+}
+for (let i = 0; i < 40 && remoteAttacks === null; i++) await sleep(100);
 await sleep(1000);
 const browserLines = (await evalJs(`window.lf2Game().net_log()`) || "").split("\n").filter((l) => l);
 let same = 0, firstDiff = -1;
@@ -87,6 +103,7 @@ for (let i = 0; i < Math.min(browserLines.length, peerLines.length); i++) {
 console.log(`exchanges: browser ${browserLines.length}, desktop ${peerLines.length}; identical ${same}` +
   (firstDiff >= 0 ? `; first difference at ${firstDiff}: ${browserLines[firstDiff]} | ${peerLines[firstDiff]}` : ""));
 console.log("last:", peerLines[peerLines.length - 1]);
+if (process.env.PRESS) console.log(`browser taps of attack: ${taps}; exchanges with the browser's attack at the desktop: ${remoteAttacks}`);
 console.log(errors.length ? "page errors:\n" + errors.join("\n") : "no page errors");
 peer.kill();
 ws.close();

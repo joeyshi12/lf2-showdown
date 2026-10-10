@@ -3,8 +3,10 @@
 //! `net_peer join CODE` joins it. Both go through the title screens as a player would,
 //! then into a VS match from a fixed key script (each side's player 1 joins, Fight!,
 //! a fight), and print a digest of every object's position and hp at each packet
-//! exchange, so the two outputs can be compared line by line.
-//! usage: net_peer host | join CODE   (needs LF2_DIR; LF2_RENDEZVOUS for another server)
+//! exchange, so the two outputs can be compared line by line. At the end it prints
+//! how many exchanges brought an attack key from the other computer's player 1.
+//! usage: net_peer host | join CODE   (needs LF2_DIR; LF2_RENDEZVOUS for another server,
+//! EXCHANGES for the number of exchanges, DELAY_MS to hold each packet back)
 use lf2_sim::menu::main_menu::{MenuRequest, MENU_Y, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
 use lf2_sim::World;
 use std::sync::Arc;
@@ -43,6 +45,7 @@ fn script(host: bool, n: u32) -> Vec<usize> {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let host = a.get(1).map(|s| s == "host").unwrap_or(true);
+    let delay_ms: u64 = std::env::var("DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let exchanges: u32 = std::env::var("EXCHANGES").ok().and_then(|s| s.parse().ok()).unwrap_or(400);
     let dir = lf2_data::game_dir_from_env().expect("set LF2_DIR");
     let exe = lf2_app::exe_image::built_in().map(|i| i.to_vec()).unwrap_or_else(|| lf2_data::read_exe(&dir).unwrap());
@@ -105,6 +108,7 @@ fn main() {
     }
     let mut shown_code = false;
     let mut n = 0u32;
+    let mut remote_attacks = 0u32;
     while n < exchanges {
         if start.elapsed() > Duration::from_secs(120) {
             eprintln!("timed out at exchange {}", n);
@@ -123,6 +127,11 @@ fn main() {
             match net.poll_exchange(&mut w) {
                 Some(p) => {
                     w.net_resume(p.as_deref());
+                    // the other computer's player 1: slot 4 on the joiner, 0 on the host
+                    let slot = if host { 4 } else { 0 };
+                    if w.g.m.u8(lf2_sim::net::IN + slot) & 8 != 0 {
+                        remote_attacks += 1;
+                    }
                     handle(&mut w, &mut net);
                     // the digest after the exchange frame
                     let mut h: u64 = 0;
@@ -168,6 +177,8 @@ fn main() {
         step(&mut w, &keys);
         handle(&mut w, &mut net);
         if w.net_waiting {
+            // DELAY_MS holds each packet back, as a slow connection would
+            std::thread::sleep(Duration::from_millis(delay_ms));
             net.begin_exchange(&mut w);
         } else if w.g.m.i32(lf2_sim::world::GAME) == 0 {
             std::thread::sleep(Duration::from_millis(10));
@@ -175,6 +186,7 @@ fn main() {
     }
     let hurt = (0..8).filter(|&i| w.exists(i) && w.objs[i].hp() < w.objs[i].max_hp()).count();
     println!("done: {} fighters hurt", hurt);
+    println!("remote attack exchanges: {}", remote_attacks);
     // let the other side finish its last exchange
     std::thread::sleep(Duration::from_secs(2));
 }
