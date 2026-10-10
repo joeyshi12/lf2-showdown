@@ -239,5 +239,15 @@ impl GameData {
 
 /// The game folder from `LF2_DIR`, for tests and tools.
 pub fn game_dir_from_env() -> Option<PathBuf> {
-    std::env::var_os("LF2_DIR").map(PathBuf::from).filter(|p| p.join("lf2.exe").exists())
+    std::env::var_os("LF2_DIR").map(PathBuf::from).filter(|p| p.join("lf2.exe").exists() || p.join(EXE_IMAGE).exists())
+}
+
+/// The parts of lf2.exe the port uses, at their file offsets in lf2.exe: the PE
+/// headers, `.data` and `.rsrc`, with the code sections zeroed. The repository's
+/// `game/` holds this file instead of lf2.exe.
+pub const EXE_IMAGE: &str = "lf2_image.bin";
+
+/// lf2.exe from the game folder, or `EXE_IMAGE` when the folder has no lf2.exe.
+pub fn read_exe(dir: &Path) -> std::io::Result<Vec<u8>> {
+    std::fs::read(dir.join("lf2.exe")).or_else(|_| std::fs::read(dir.join(EXE_IMAGE)))
 }

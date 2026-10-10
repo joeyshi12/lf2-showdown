@@ -11,7 +11,7 @@ fn main() {
     let max: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20);
     let dir = lf2_data::game_dir_from_env().expect("set LF2_DIR");
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let t = Trace::load(path, &exe).unwrap();
     let mut w = World::from_snapshot(&t.frames[0].state, gd);
         // state outside the snapshot (stage-mode spawn counters) comes as pokes

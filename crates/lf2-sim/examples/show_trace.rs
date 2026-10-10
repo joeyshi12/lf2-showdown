@@ -6,7 +6,7 @@ use lf2_sim::trace::Trace;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let dir = lf2_data::game_dir_from_env().expect("set LF2_DIR");
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let t = Trace::load(std::path::Path::new(&args[1]), &exe).unwrap();
     let every: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
     for (n, f) in t.frames.iter().enumerate().step_by(every) {

@@ -79,7 +79,7 @@ impl Pair {
 #[test]
 fn server_and_client_stay_in_step() {
     let Some(dir) = lf2_data::game_dir_from_env() else { return };
-    let exe = std::fs::read(dir.join("lf2.exe")).unwrap();
+    let exe = lf2_data::read_exe(&dir).unwrap();
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let controls = lf2_data::controls::load(&dir).unwrap_or_default();
     let mut s = World::new_title(gd.clone(), &exe, &controls, None, 11);

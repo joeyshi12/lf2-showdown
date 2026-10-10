@@ -235,7 +235,7 @@ fn main() {
     let exe: Vec<u8> = match lf2_app::exe_image::built_in() {
         Some(img) => img.to_vec(),
         None => {
-            let exe = std::fs::read(dir.join("lf2.exe")).unwrap_or_default();
+            let exe = lf2_data::read_exe(&dir).unwrap_or_default();
             if !lf2_app::exe_image::is_original(&exe) {
                 eprintln!("this build has no game data built in and the game folder has no original lf2.exe v2.0a; build it with LF2_DIR set");
                 std::process::exit(1);

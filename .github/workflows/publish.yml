@@ -1,0 +1,76 @@
+name: publish
+
+# Builds the web version and deploys it to Cloudflare Pages. Deploys happen on a `v*` tag or by
+# hand, not on every merge, and a deploy replaces the site. Rolling back is promoting the
+# previous Pages deployment.
+#
+# The page loads the game from game/ next to it, so the repository's game/ is deployed with it.
+# Needs the secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and optionally the variable
+# CLOUDFLARE_PROJECT_NAME.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  LF2_DIR: ${{ github.workspace }}/game
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Before anything slow: a rolled or missing token should not cost a build to discover.
+      - name: the deploy credentials work
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 whoami
+
+      # alsa, x11 and wayland for the desktop crate the tests build, fonts-wine for the System
+      # font build.rs puts into the program
+      - name: install packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends pkg-config libasound2-dev \
+            libx11-dev libxkbcommon-dev libwayland-dev libxcursor-dev libxrandr-dev \
+            libxi-dev fonts-wine
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: test
+        run: cargo test --release --workspace
+
+      - name: build
+        run: |
+          wasm-pack build --release --target web --out-dir "$PWD/build/pkg" crates/lf2-web
+          tools/web/package.sh build/pkg build/web game
+          rm -f build/web/pkg/.gitignore
+
+      # Cloudflare Pages refuses files of 25 MiB or more, and more than 20,000 files.
+      - name: the build fits in Pages
+        run: |
+          set -eu
+          big=$(find build/web -type f -size +25165823c)
+          [ -z "$big" ] || { echo "too large for Pages: $big"; exit 1; }
+          n=$(find build/web -type f | wc -l)
+          [ "$n" -le 20000 ] || { echo "$n files, Pages takes 20000"; exit 1; }
+          du -sh build/web; echo "$n files"
+
+      - name: deploy to cloudflare pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 pages deploy build/web \
+            --project-name "${{ vars.CLOUDFLARE_PROJECT_NAME || 'lf2-showdown' }}" \
+            --branch main \
+            --commit-hash "${{ github.sha }}"
