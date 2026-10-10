@@ -20,7 +20,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
 /// The rendezvous server, overridable with LF2_RENDEZVOUS.
-pub const DEFAULT_URL: &str = "wss://rv.joeyshi.xyz/ws?app=lf2-showdown";
+pub const DEFAULT_URL: &str = "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
 const DEFAULT_STUN: &str = "stun.l.google.com:19302";
 
 pub fn rendezvous_url() -> String {

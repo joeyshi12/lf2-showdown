@@ -19,8 +19,8 @@ the programs at it with `LF2_DIR=$PWD/game`.
 - Network game: on the title screen choose "network game". The host picks "server"
   and gets a room code; the other player picks "client" and types it. Desktop and
   browser can play each other. The connection is peer to peer (WebRTC) and is set up
-  through `wss://rv.joeyshi.xyz/ws?app=lf2-showdown` (change it with `LF2_RENDEZVOUS` on the
-  desktop or `?rendezvous=` on the web page).
+  through `wss://rv.lf2-showdown.online/ws?app=lf2-showdown` (change it with
+  `LF2_RENDEZVOUS` on the desktop or `?rendezvous=` on the web page).
 
 Differences from the original: no ads, no forum link, a smoother 60 pictures a second
 (`--fps 30` for the original's 30), and the network game uses room codes instead of

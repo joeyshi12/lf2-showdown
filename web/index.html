@@ -272,7 +272,7 @@ async function playMusic(name) {
 // WebRTC data channel, set up through the icebreaker rendezvous server with a room
 // code. Offers and answers carry all candidates (icebreaker does not pass trickled
 // ones), so each side waits for candidate gathering to finish first.
-const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.joeyshi.xyz/ws?app=lf2-showdown";
+const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
 const net = {
   ws: null, pc: null, ch: null,
   gathered(pc) {
