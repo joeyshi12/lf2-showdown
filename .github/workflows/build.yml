@@ -1,0 +1,75 @@
+name: build
+
+# The Linux and Windows programs, uploaded as artifacts of the run. The tests replay the traces
+# against the game in game/, and the build puts game/lf2_image.bin (the parts of lf2.exe the
+# port uses) into the program, so the program can replace lf2.exe in a game folder.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_RELEASE_DEBUG: 0
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+  LF2_DIR: ${{ github.workspace }}/game
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # alsa for cpal, x11 and wayland for minifb, fonts-wine for the System font
+      # (/usr/share/wine/fonts/vgasys.fon) that build.rs puts into the program
+      - name: install packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends pkg-config libasound2-dev \
+            libx11-dev libxkbcommon-dev libwayland-dev libxcursor-dev libxrandr-dev \
+            libxi-dev fonts-wine
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: test
+        run: cargo test --release --workspace
+
+      - name: build
+        run: cargo build --release -p lf2-app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lf2-linux-x86_64
+          path: target/release/lf2
+          if-no-files-found: error
+
+  # Cross-built from Linux with zig (tools/cross/build-windows.sh), which is how the Windows
+  # program has been built and checked so far.
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: install zig
+        run: python3 -m pip install ziglang==0.16.0
+
+      - name: build
+        run: tools/cross/build-windows.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lf2-windows-x86_64
+          path: target/x86_64-pc-windows-gnu/release/lf2.exe
+          if-no-files-found: error
