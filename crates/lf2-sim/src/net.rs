@@ -56,7 +56,7 @@ const CHECKSUM: u32 = 0x44f620;
 const NAMES: u32 = 0x44fcc0;
 /// The version of the messages below. Computers with different versions refuse
 /// each other.
-pub const PROTOCOL: u16 = 2;
+pub const PROTOCOL: u16 = 3;
 
 /// The F-keys in the packet, in the order the original applies them: key, packet
 /// byte (10 or 12), bit.
@@ -73,6 +73,44 @@ pub const FKEY_BITS: [(u32, usize, u8); 11] = [
     (0x77, 12, 0x04),
     (0x78, 10, 0x80),
 ];
+
+/// One computer in the room, as the network screens list it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NetPlayer {
+    pub name: String,
+    /// The round-trip time to it in milliseconds, where this computer measures it
+    /// (the host to each joiner, a joiner to the host).
+    pub ping: Option<u32>,
+    /// This computer.
+    pub me: bool,
+}
+
+/// What the network screens show (`menu::net_menu`).
+#[derive(Clone, Debug, Default)]
+pub struct NetUi {
+    /// The computers in the room, the host first.
+    pub players: Vec<NetPlayer>,
+    /// Why the connection failed (title screen 5).
+    pub error: Option<String>,
+    /// This computer hosts (or tried to).
+    pub hosting: bool,
+    /// When the room code was copied (World::time_ms).
+    pub copied_at: Option<u32>,
+}
+
+/// The name a computer is listed with: its player 1 name from control settings,
+/// or "Player N" when that is empty or only the default digit.
+fn display_name(raw: &[u8; 11], seat: usize) -> [u8; 11] {
+    let n = name_string(raw);
+    if !n.is_empty() && !n.bytes().all(|c| c.is_ascii_digit()) {
+        return *raw;
+    }
+    let mut out = [0u8; 11];
+    for (k, b) in format!("Player {}", seat + 1).bytes().take(10).enumerate() {
+        out[k] = b;
+    }
+    out
+}
 
 /// Set the room code the network screens show ("" for none).
 pub fn set_room_code(w: &mut World, code: &str) {
@@ -143,17 +181,19 @@ impl World {
         if let Some(seed) = table.get(TABLE..TABLE + 4) {
             self.g.set_crt_seed(i32::from_le_bytes(seed.try_into().unwrap()));
         }
-        self.net_players.clear();
+        self.net_ui.players.clear();
         crate::menu::title::set_screen(self, 0);
         self.g.m.set_i32(crate::world::GAME, 1);
     }
 
-    /// The connection failed before the game started: back to "server or client"
-    /// (the platform shows `NetSession::error`).
-    pub fn net_connect_failed(&mut self) {
-        crate::menu::title::set_screen(self, 1);
+    /// The connection failed before the game started: the network screens show
+    /// `message` with "try again" and "back".
+    pub fn net_connect_failed(&mut self, message: &str) {
+        crate::menu::title::set_screen(self, 5);
         set_room_code(self, "");
-        self.net_players.clear();
+        self.net_ui.players.clear();
+        self.net_ui.error = Some(message.to_string());
+        self.requests.push(MenuRequest::NetClose);
     }
 
     /// The platform cannot open network links: back to the title screen, as the
@@ -245,7 +285,14 @@ mod tag {
     pub const START: u8 = 4;
     pub const REFUSE: u8 = 5;
     pub const LEFT: u8 = 6;
+    pub const PING: u8 = 7;
+    pub const PONG: u8 = 8;
 }
+
+/// How often each computer measures the round-trip time to the others.
+const PING_EVERY_MS: u32 = 500;
+/// How long the notice that a player left stays on the screen.
+const NOTICE_MS: u32 = 3000;
 
 /// The most inputs of one seat an INPUT message carries.
 const MAX_BLOCK: u32 = 64;
@@ -264,6 +311,7 @@ struct Peer {
     /// The frame this joiner had simulated when it sent its last message.
     frame: u32,
     gone: bool,
+    ping: Option<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -290,8 +338,6 @@ pub struct NetSession {
     rb: Option<Rollback>,
     out: Vec<(u32, Vec<u8>)>,
     closed: bool,
-    /// A message for the player when the connection failed before the game.
-    pub error: Option<String>,
     /// F-keys pressed while no frame ran, for the next frame.
     pending_fk: [u8; 2],
     /// Joiner: the host's frame and its frame advantage over this computer, from
@@ -311,6 +357,17 @@ pub struct NetSession {
     /// Every hash this computer made (frame, hash), for tests that compare
     /// computers.
     pub log: Vec<(u32, u64)>,
+    /// The platform's clock in milliseconds (`set_clock`).
+    clock: u32,
+    last_ping: u32,
+    /// Joiner: the round-trip time to the host.
+    host_ping: Option<u32>,
+    /// Joiner: its place in the host's list.
+    my_place: usize,
+    /// The names of the seats once the game runs.
+    names: Vec<String>,
+    /// "... left the game", until this time.
+    notice: Option<(String, u32)>,
 }
 
 impl NetSession {
@@ -323,7 +380,6 @@ impl NetSession {
             rb: None,
             out: Vec::new(),
             closed: false,
-            error: None,
             pending_fk: [0; 2],
             host_frame: 0,
             host_adv: 0,
@@ -333,6 +389,12 @@ impl NetSession {
             peer_hash: [(u32::MAX, 0); MAX_SEATS],
             frames_run: 0,
             log: Vec::new(),
+            clock: 0,
+            last_ping: 0,
+            host_ping: None,
+            my_place: 0,
+            names: Vec::new(),
+            notice: None,
         }
     }
 
@@ -362,7 +424,51 @@ impl NetSession {
     /// Host: the room code from the rendezvous server.
     pub fn on_code(&mut self, w: &mut World, code: &str) {
         set_room_code(w, code);
-        w.net_players = vec![name_string(&w.net_local_name())];
+        self.show_players(w);
+    }
+
+    /// The platform's clock in milliseconds, every frame: measures the round-trip
+    /// times and times the notices.
+    pub fn set_clock(&mut self, ms: u32) {
+        self.clock = ms;
+        if self.stage == Stage::Over || ms.wrapping_sub(self.last_ping) < PING_EVERY_MS {
+            return;
+        }
+        self.last_ping = ms;
+        let mut m = vec![tag::PING];
+        m.extend_from_slice(&ms.to_le_bytes());
+        if self.host {
+            for p in self.peers.iter().filter(|p| p.accepted && !p.gone) {
+                self.out.push((p.id, m.clone()));
+            }
+        } else if self.connected {
+            self.out.push((0, m));
+        }
+    }
+
+    /// The names in the room, the host first, as they are listed.
+    fn room_names(&self, w: &World) -> Vec<[u8; 11]> {
+        let mut names = vec![display_name(&w.net_local_name(), 0)];
+        for (k, p) in self.peers.iter().filter(|p| p.accepted).enumerate() {
+            names.push(display_name(&p.name, k + 1));
+        }
+        names
+    }
+
+    /// Host: the list the host's screen shows.
+    fn show_players(&self, w: &mut World) {
+        let names = self.room_names(w);
+        let pings = std::iter::once(None).chain(self.peers.iter().filter(|p| p.accepted).map(|p| p.ping));
+        w.net_ui.players = names.iter().zip(pings).enumerate().map(|(k, (n, ping))| NetPlayer { name: name_string(n), ping, me: k == 0 }).collect();
+    }
+
+    /// Worst round-trip time, for the readout in the game.
+    fn worst_ping(&self) -> Option<u32> {
+        if self.host {
+            self.peers.iter().filter(|p| !p.gone).filter_map(|p| p.ping).max()
+        } else {
+            self.host_ping
+        }
     }
 
     /// A link opened: the joiner says hello; the host waits for it.
@@ -376,6 +482,7 @@ impl NetSession {
         m.extend_from_slice(&w.net_data_checksum().to_le_bytes());
         m.extend_from_slice(&w.net_local_name());
         self.out.push((peer, m));
+        self.set_clock(self.clock.wrapping_add(PING_EVERY_MS));
     }
 
     /// A link closed. Before the game a joiner goes back to "server or client" with
@@ -385,10 +492,7 @@ impl NetSession {
         if !self.host {
             self.closed = true;
             match self.stage {
-                Stage::Lobby => {
-                    self.error = Some(msg.to_string());
-                    w.net_connect_failed();
-                }
+                Stage::Lobby => w.net_connect_failed(msg),
                 Stage::Playing => self.end_game(w, "Connection Lost!"),
                 Stage::Over => {}
             }
@@ -403,6 +507,7 @@ impl NetSession {
             Stage::Playing => {
                 self.peers[i].gone = true;
                 let seat = self.peers[i].seat;
+                self.left_notice(seat);
                 let rb = self.rb.as_mut().unwrap();
                 let at = rb.known(seat);
                 rb.leave(seat, at);
@@ -427,16 +532,22 @@ impl NetSession {
         w.requests.push(MenuRequest::Quit);
     }
 
-    fn send_roster(&mut self, w: &mut World) {
-        let mut names = vec![w.net_local_name()];
-        names.extend(self.peers.iter().filter(|p| p.accepted).map(|p| p.name));
-        w.net_players = names.iter().map(name_string).collect();
-        let mut m = vec![tag::ROSTER, names.len() as u8];
-        for n in &names {
-            m.extend_from_slice(n);
+    fn left_notice(&mut self, seat: usize) {
+        if let Some(n) = self.names.get(seat) {
+            self.notice = Some((format!("{} left the game", n), self.clock.wrapping_add(NOTICE_MS)));
         }
-        for p in self.peers.iter().filter(|p| p.accepted) {
-            self.out.push((p.id, m.clone()));
+    }
+
+    /// Host: send each joiner the list, with its own place in it.
+    fn send_roster(&mut self, w: &mut World) {
+        let names = self.room_names(w);
+        self.show_players(w);
+        for (k, p) in self.peers.iter().filter(|p| p.accepted).enumerate() {
+            let mut m = vec![tag::ROSTER, names.len() as u8, k as u8 + 1];
+            for n in &names {
+                m.extend_from_slice(n);
+            }
+            self.out.push((p.id, m));
         }
     }
 
@@ -451,8 +562,7 @@ impl NetSession {
             return;
         }
         self.peers.retain(|p| p.accepted);
-        let mut names = vec![w.net_local_name()];
-        names.extend(self.peers.iter().map(|p| p.name));
+        let names = self.room_names(w);
         let table = w.net_table();
         for (k, p) in self.peers.iter_mut().enumerate() {
             p.seat = k + 1;
@@ -468,6 +578,7 @@ impl NetSession {
 
     fn begin(&mut self, w: &mut World, names: &[[u8; 11]], me: usize, table: &[u8]) {
         w.net_start(names, me, table);
+        self.names = names.iter().map(name_string).collect();
         self.rb = Some(Rollback::new(names.len(), me));
         self.stage = Stage::Playing;
     }
@@ -479,6 +590,16 @@ impl NetSession {
         if self.host {
             match t {
                 tag::HELLO => self.on_hello(w, peer, body),
+                tag::PING => self.pong(peer, body),
+                tag::PONG if body.len() >= 4 => {
+                    let t = u32::from_le_bytes(body[..4].try_into().unwrap());
+                    if let Some(p) = self.peers.iter_mut().find(|p| p.id == peer) {
+                        p.ping = Some(self.clock.wrapping_sub(t));
+                    }
+                    if self.stage == Stage::Lobby {
+                        self.show_players(w);
+                    }
+                }
                 tag::INPUT => {
                     if let Some(i) = self.peers.iter().position(|p| p.id == peer && !p.gone) {
                         self.on_input(w, Some(i), body);
@@ -489,15 +610,27 @@ impl NetSession {
             return;
         }
         match t {
-            tag::ROSTER if self.stage == Stage::Lobby => {
-                let n = *body.first().unwrap_or(&0) as usize;
-                w.net_players = (0..n).filter_map(|k| body.get(1 + 11 * k..12 + 11 * k)).map(|b| name_string(&b.try_into().unwrap())).collect();
+            tag::ROSTER if self.stage == Stage::Lobby && body.len() >= 2 => {
+                let (n, me) = (body[0] as usize, body[1] as usize);
+                self.my_place = me;
+                w.net_ui.players = (0..n)
+                    .filter_map(|k| body.get(2 + 11 * k..13 + 11 * k))
+                    .enumerate()
+                    .map(|(k, b)| NetPlayer { name: name_string(&b.try_into().unwrap()), ping: if k == 0 { self.host_ping } else { None }, me: k == me })
+                    .collect();
+            }
+            tag::PING => self.pong(peer, body),
+            tag::PONG if body.len() >= 4 => {
+                let t = u32::from_le_bytes(body[..4].try_into().unwrap());
+                self.host_ping = Some(self.clock.wrapping_sub(t));
+                if let Some(h) = w.net_ui.players.first_mut() {
+                    h.ping = self.host_ping;
+                }
             }
             tag::REFUSE if self.stage == Stage::Lobby => {
                 let msg = String::from_utf8_lossy(body).into_owned();
                 self.closed = true;
-                self.error = Some(msg);
-                w.net_connect_failed();
+                w.net_connect_failed(&msg);
             }
             tag::START if self.stage == Stage::Lobby => {
                 let (n, me) = (*body.first().unwrap_or(&0) as usize, *body.get(1).unwrap_or(&0) as usize);
@@ -516,6 +649,7 @@ impl NetSession {
                 if let Some(rb) = self.rb.as_mut() {
                     if seat < rb.seats() {
                         rb.leave(seat, at);
+                        self.left_notice(seat);
                     }
                 }
             }
@@ -547,8 +681,14 @@ impl NetSession {
         let mut name: [u8; 11] = b[6..17].try_into().unwrap();
         name[10] = 0;
         self.peers.retain(|p| p.id != peer);
-        self.peers.push(Peer { id: peer, name, accepted: true, seat: 0, has: [0; MAX_SEATS], frame: 0, gone: false });
+        self.peers.push(Peer { id: peer, name, accepted: true, seat: 0, has: [0; MAX_SEATS], frame: 0, gone: false, ping: None });
         self.send_roster(w);
+    }
+
+    fn pong(&mut self, peer: u32, body: &[u8]) {
+        let mut m = vec![tag::PONG];
+        m.extend_from_slice(&body[..body.len().min(4)]);
+        self.out.push((peer, m));
     }
 
     /// An INPUT message: from joiner `from` (host), or from the host (joiner).
@@ -664,7 +804,27 @@ impl NetSession {
         }
         self.check_hashes(w);
         self.send_inputs();
+        if ran > 0 {
+            self.overlay(w);
+        }
         ran
+    }
+
+    /// Drawn over the game's last frame: the worst round-trip time and the frames
+    /// the last correction ran again, bottom left, and the notice that a player
+    /// left.
+    fn overlay(&mut self, w: &mut World) {
+        let redo = self.rb.as_ref().map_or(0, |r| r.last_redo);
+        let ping = self.worst_ping().map_or("-".to_string(), |p| p.to_string());
+        let text = format!("{} ms  rollback {}", ping, redo);
+        w.draw.push(crate::draw::Draw::Label { text: text.into_bytes(), rgb: 0xc8d2f5, x: 4, y: 532, align: -1, scale: 1, pad: Some(0) });
+        if let Some((n, until)) = &self.notice {
+            if (until.wrapping_sub(self.clock) as i32) > 0 {
+                w.draw.push(crate::draw::Draw::Label { text: n.clone().into_bytes(), rgb: 0xffffff, x: 397, y: 140, align: 0, scale: 1, pad: Some(0x122565) });
+            } else {
+                self.notice = None;
+            }
+        }
     }
 
     /// Run again the frames whose guesses turned out wrong, without new frames, and

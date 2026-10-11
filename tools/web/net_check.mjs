@@ -73,7 +73,7 @@ const startPeer = (args, env) => {
 };
 await click(0x150, 0x100);                 // network game
 if (role === "host") {
-  await click(0x150, 0x118);               // server
+  await click(397, 243);                   // Host a game
   let code;
   for (let i = 0; i < 50 && !code; i++) { code = await evalJs(`window.lf2Net.code`); await sleep(200); }
   console.log("browser hosts room", code);
@@ -85,7 +85,7 @@ if (role === "host") {
   for (let i = 0; i < 100 && !host.code; i++) await sleep(100);
   console.log("desktop hosts room", host.code);
   for (let k = 2; k < N; k++) { startPeer(["join", host.code], {}); await sleep(1500); }
-  await click(0x150, 0x138);               // client
+  await click(397, 277);                   // Join a game
   for (const c of host.code) await key(/[0-9]/.test(c) ? "Digit" + c : "Key" + c, c.toLowerCase(), c.charCodeAt(0));
   await key("Enter", "Enter", 0x0d);
 }

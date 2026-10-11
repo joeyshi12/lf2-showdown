@@ -26,6 +26,12 @@ pub enum Draw {
     /// `draw_text`: TextOutA with the DC's default font (System), opaque background.
     /// Colours are COLORREF values (0x00BBGGRR).
     Text { text: Vec<u8>, bk: u32, color: u32, x: i32, y: i32 },
+    /// Text of this port's own screens (the network game's), in the System font
+    /// without a background, `scale` times the size. `align` -1 puts `x` at the
+    /// left edge, 0 at the middle, 1 at the right edge. With `pad` the text sits on
+    /// a box of that colour reaching 6 pixels past it on each side. rgb is
+    /// 0x00RRGGBB.
+    Label { text: Vec<u8>, rgb: u32, x: i32, y: i32, align: i8, scale: i32, pad: Option<u32> },
 }
 
 impl crate::World {
@@ -44,6 +50,11 @@ impl crate::World {
 
     pub fn text(&mut self, text: &[u8], bk: u32, color: u32, x: i32, y: i32) {
         self.draw.push(Draw::Text { text: text.to_vec(), bk, color, x, y });
+    }
+
+    /// A `Draw::Label` at normal size without a box.
+    pub fn ui_text(&mut self, text: &str, rgb: u32, x: i32, y: i32, align: i8) {
+        self.draw.push(Draw::Label { text: text.as_bytes().to_vec(), rgb, x, y, align, scale: 1, pad: None });
     }
 }
 

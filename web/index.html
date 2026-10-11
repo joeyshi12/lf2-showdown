@@ -157,9 +157,9 @@
       the volume. Click the game first so it gets your key presses and plays sound.</p>
     <h2>Network play</h2>
     <p>Up to four players can play over the internet, one per computer. On the title
-      screen, choose network game. One player chooses Waiting for Opponent and gets a
-      room code. The others choose Connect to Opponent and type in that code. When
-      everyone is listed, the first player presses <kbd>Enter</kbd> to start. The
+      screen, choose network game. One player chooses Host a game and gets a room code.
+      The others choose Join a game and type in that code. When everyone is listed,
+      the host presses <kbd>Enter</kbd> to start. The
       browser and desktop versions can play each other.</p>
     <h2>Download</h2>
     <p>The Windows and Linux versions are on the
@@ -534,8 +534,6 @@ function run() {
     const p = game.step(smoothNow(), mouse.x, mouse.y, mouse.down, Math.floor(performance.now() - start),
       new Uint16Array([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]));
     net.flush();
-    const err = game.net_error();
-    if (err) alert(err);
     if (p === 0) return handleRequests() ? "wait" : "quit";
     period = p;
     lastPeriod = period;
@@ -567,6 +565,7 @@ function run() {
       else if (cmd === "net-host") net.host();
       else if (cmd === "net-join") net.join(arg);
       else if (cmd === "net-close") net.close();
+      else if (cmd === "copy") navigator.clipboard?.writeText(arg).catch(() => {});
       else if (cmd === "quit") {
         canvas.style.display = "none";
         const st = document.getElementById("start");

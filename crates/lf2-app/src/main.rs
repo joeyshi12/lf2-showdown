@@ -337,15 +337,12 @@ fn main() {
         let mut stepped = false;
         let over = quick && (world.g.match_phase() != 0 || world.g.end_timer() > 0x15d);
         net.pump(&mut world);
-        if let Some(e) = net.take_error() {
-            platform::message(&e);
-        }
         {
             // Ctrl+V pastes a room code on the client screen
             let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
             if ctrl && events.contains(&(b'V', true)) {
                 if let Some(text) = platform::clipboard_text() {
-                    lf2_sim::menu::title::paste_room_code(&mut world, &text);
+                    lf2_sim::menu::net_menu::paste_room_code(&mut world, &text);
                 }
             }
             apply_events(&mut events, &mut keys, &mut world.g);
@@ -423,6 +420,7 @@ fn main() {
                 MenuRequest::NetConnect => net.connect(&mut world),
                 MenuRequest::NetClose => net.close(),
                 MenuRequest::NetStart => net.start(&mut world),
+                MenuRequest::CopyText(t) => platform::copy_text(&t),
                 MenuRequest::OpenRecording => {
                     open_recording(&mut world, &dir, &exe);
                     tween.clear();

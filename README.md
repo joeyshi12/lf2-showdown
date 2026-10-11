@@ -17,8 +17,8 @@ the programs at it with `LF2_DIR=$PWD/game`.
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.
 - Network game: up to four computers, one player each. On the title screen choose
-  "network game". The host picks "Waiting for Opponent" and gets a room code; the
-  others pick "Connect to Opponent" and type it. The host presses Enter to start
+  "network game". The host picks "Host a game" and gets a room code; the others
+  pick "Join a game" and type it. The host presses Enter to start
   once everyone is listed. Desktop and browser can play each other. Each computer
   runs ahead with its own input and corrects the game when another computer's
   input arrives late (rollback), so a slow connection does not slow the game down.

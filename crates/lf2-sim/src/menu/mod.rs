@@ -5,6 +5,7 @@ pub mod sprites;
 pub mod main_menu;
 pub mod pick;
 pub mod title;
+pub mod net_menu;
 pub mod battle_menus;
 
 /// The resource a surface global holds, for the renderer.

@@ -176,6 +176,8 @@ pub struct Rollback {
     pub resimulated: u64,
     pub rollbacks: u64,
     pub stalls: u64,
+    /// Frames the last correction ran again.
+    pub last_redo: u32,
 }
 
 impl Rollback {
@@ -201,6 +203,7 @@ impl Rollback {
             resimulated: 0,
             rollbacks: 0,
             stalls: 0,
+            last_redo: 0,
         }
     }
 
@@ -335,6 +338,7 @@ impl Rollback {
             }
             w.requests.truncate(requests);
             self.resimulated += (end - from) as u64;
+            self.last_redo = end - from;
             self.rollbacks += 1;
         }
         let mut sounds = Vec::new();
