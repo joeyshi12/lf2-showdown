@@ -108,6 +108,8 @@ for (let k = 0; k < peers.length; k++) {
     (first >= 0 ? `; first difference at ${first}: ${d[first]} | ${browser[first]}` : "") + `; ${peers[k].done || "not done"}`);
   if (first >= 0 || same < d.length - 2 || d.length < FRAMES / 16 - 2) ok = false;
 }
+const fastInfo = await evalJs(`[...window.lf2Net.links.values()].map((l) => l.fast ? l.fast.readyState + " ordered=" + l.fast.ordered + " maxRetransmits=" + l.fast.maxRetransmits : "none").join("; ")`);
+console.log("browser fast channels:", fastInfo);
 console.log("browser: frames, rollbacks, frames run again, waits:", await evalJs(`window.lf2Game().net_stats()`));
 if (process.env.PRESS) console.log(`browser taps of attack: ${taps}`);
 console.log(errors.length ? "page errors:\n" + errors.join("\n") : "no page errors");

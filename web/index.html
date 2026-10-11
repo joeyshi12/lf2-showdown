@@ -276,10 +276,13 @@ async function playMusic(name) {
 // The network game: the messages of lf2_sim::net::NetSession over WebRTC data
 // channels, set up through the icebreaker rendezvous server with a room code. The
 // host has one link per joiner (up to three), numbered from 1; a joiner has one
-// link, to the host, numbered 0. Offers and answers carry all candidates
-// (icebreaker does not pass trickled ones), so each side waits for candidate
-// gathering to finish first.
+// link, to the host, numbered 0. Each link has two channels: "lf2", reliable and
+// ordered, for the room, and "lf2-fast", unordered and without resending, for the
+// inputs and pings (a lost input message is repeated by the next one). Offers and
+// answers carry all candidates (icebreaker does not pass trickled ones), so each
+// side waits for candidate gathering to finish first.
 const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
+const FAST_CHANNEL = { ordered: false, maxRetransmits: 0 };
 const net = {
   ws: null, links: new Map(), nextPeer: 1, pendingOut: new Map(),
   gathered(pc) {
@@ -297,11 +300,13 @@ const net = {
   },
   channel(peer, ch) {
     const link = this.links.get(peer);
-    link.ch = ch;
+    const fast = ch.label === "lf2-fast";
+    if (fast) link.fast = ch; else link.ch = ch;
     ch.binaryType = "arraybuffer";
-    ch.onopen = () => { game.net_connected(peer); this.flush(); };
+    ch.onopen = () => { if (!fast) game.net_connected(peer); this.flush(); };
     ch.onmessage = (e) => game.net_data(peer, new Uint8Array(e.data));
     ch.onclose = () => {
+      if (fast) return;
       this.links.delete(peer);
       if (peer === 0) this.fail("The connection to the other player closed.");
       else game.net_closed(peer, "The other player left.");
@@ -330,7 +335,7 @@ const net = {
       else if (m.type === "offer") {
         const peer = this.nextPeer++;
         const pc = new RTCPeerConnection({ iceServers: ice });
-        this.links.set(peer, { pc, ch: null });
+        this.links.set(peer, { pc, ch: null, fast: null });
         pc.ondatachannel = (e) => this.channel(peer, e.channel);
         await pc.setRemoteDescription(m.offer);
         await pc.setLocalDescription(await pc.createAnswer());
@@ -346,8 +351,9 @@ const net = {
     const ws = this.socket(async (m) => {
       if (m.type === "ice_servers" && !this.links.has(0)) {
         const pc = new RTCPeerConnection({ iceServers: m.ice_servers || [] });
-        this.links.set(0, { pc, ch: null });
+        this.links.set(0, { pc, ch: null, fast: null });
         this.channel(0, pc.createDataChannel("lf2"));
+        this.channel(0, pc.createDataChannel("lf2-fast", FAST_CHANNEL));
         await pc.setLocalDescription(await pc.createOffer());
         await this.gathered(pc);
         ws.send(JSON.stringify({ type: "join", code: code.trim().toUpperCase(), offer: pc.localDescription }));
@@ -366,7 +372,7 @@ const net = {
     // no more events from what is being closed (a second "closed" would replace the
     // first message)
     const all = [this.ws];
-    for (const l of this.links.values()) all.push(l.ch, l.pc);
+    for (const l of this.links.values()) all.push(l.ch, l.fast, l.pc);
     for (const x of all) {
       if (!x) continue;
       x.onclose = x.onerror = x.onmessage = x.onopen = null;
@@ -380,19 +386,29 @@ const net = {
   },
   flush() {
     if (!game) return;
-    // net_outgoing: peer (1 byte), length (4 bytes), message, ...
+    // net_outgoing: peer (1 byte), 1 for the fast channel (1 byte), length (4 bytes),
+    // message, ...
     const b = game.net_outgoing();
     const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    for (let p = 0; p + 5 <= b.length;) {
-      const peer = b[p], n = v.getUint32(p + 1, true);
-      if (!this.pendingOut.has(peer)) this.pendingOut.set(peer, []);
-      this.pendingOut.get(peer).push(b.slice(p + 5, p + 5 + n));
-      p += 5 + n;
+    const open = (c) => c && c.readyState === "open";
+    for (let p = 0; p + 6 <= b.length;) {
+      const peer = b[p], fast = b[p + 1] === 1, n = v.getUint32(p + 2, true);
+      const m = b.slice(p + 6, p + 6 + n);
+      p += 6 + n;
+      const l = this.links.get(peer);
+      if (!l) continue;
+      // inputs that cannot go now are dropped: the next message repeats them
+      if (fast && open(l.fast)) { if (l.fast.bufferedAmount < 65536) l.fast.send(m); }
+      else if (fast && open(l.ch)) l.ch.send(m);
+      else if (!fast) {
+        if (!this.pendingOut.has(peer)) this.pendingOut.set(peer, []);
+        this.pendingOut.get(peer).push(m);
+      }
     }
     for (const [peer, q] of this.pendingOut) {
       const l = this.links.get(peer);
       if (!l) { this.pendingOut.delete(peer); continue; }
-      if (!l.ch || l.ch.readyState !== "open") continue;
+      if (!open(l.ch)) continue;
       for (const m of q) l.ch.send(m);
       q.length = 0;
     }

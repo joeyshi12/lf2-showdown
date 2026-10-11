@@ -203,12 +203,14 @@ impl Game {
         }
     }
 
-    /// The messages to send since the last call, each as the peer (1 byte), the
-    /// length (4 bytes, little-endian) and the message.
+    /// The messages to send since the last call, each as the peer (1 byte), 1 if it
+    /// goes on the channel that may lose messages else 0 (1 byte), the length (4
+    /// bytes, little-endian) and the message.
     pub fn net_outgoing(&mut self) -> Vec<u8> {
         let mut out = Vec::new();
         for (peer, m) in self.net.as_mut().map(|n| n.take_outgoing()).unwrap_or_default() {
             out.push(peer as u8);
+            out.push(lf2_sim::net::is_unreliable(&m) as u8);
             out.extend_from_slice(&(m.len() as u32).to_le_bytes());
             out.extend_from_slice(&m);
         }

@@ -27,7 +27,14 @@
 //!   are replaced by a version and data check when a computer joins and a hash of
 //!   the game state every `rollback::HASH_EVERY` frames.
 //!
-//! The messages between computers are in [`NetSession`]. The computers form a star:
+//! The messages between computers are in [`NetSession`]. Each link has two data
+//! channels: a reliable, ordered one for the room (HELLO, ROSTER, START, REFUSE,
+//! LEFT) and an unordered one without resending for INPUT and the pings
+//! ([`is_unreliable`]). A lost INPUT message costs nothing: the next one carries the
+//! same inputs again, and with a reliable channel it would instead hold back every
+//! message behind it until the resend arrived.
+//!
+//!  The computers form a star:
 //! each joiner has one link, to the host, and the host passes each computer's inputs
 //! on to the others.
 
@@ -287,6 +294,13 @@ mod tag {
     pub const LEFT: u8 = 6;
     pub const PING: u8 = 7;
     pub const PONG: u8 = 8;
+}
+
+/// True for the messages the platform sends on a channel that may lose and reorder
+/// messages (INPUT, which repeats everything not yet acknowledged, and the pings).
+/// All others need a reliable, ordered channel.
+pub fn is_unreliable(m: &[u8]) -> bool {
+    matches!(m.first(), Some(&tag::INPUT | &tag::PING | &tag::PONG))
 }
 
 /// How often each computer measures the round-trip time to the others.

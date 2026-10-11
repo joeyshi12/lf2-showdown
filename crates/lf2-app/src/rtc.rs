@@ -13,7 +13,7 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 use str0m::change::{SdpAnswer, SdpOffer};
-use str0m::channel::ChannelId;
+use str0m::channel::{ChannelConfig, ChannelId, Reliability};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tungstenite::stream::MaybeTlsStream;
@@ -242,34 +242,108 @@ fn new_rtc(stun: &[String]) -> Result<(UdpSocket, SocketAddr, Rtc), String> {
     Ok((sock, local, rtc))
 }
 
-/// One data channel's connection: its UDP socket and its Rtc.
+const RELIABLE: &str = "lf2";
+const FAST: &str = "lf2-fast";
+
+/// The unordered channel without resending (see lf2_sim::net::is_unreliable).
+fn fast_config() -> ChannelConfig {
+    ChannelConfig { label: FAST.into(), ordered: false, reliability: Reliability::MaxRetransmits { retransmits: 0 }, ..Default::default() }
+}
+
+/// Test settings, from the environment: LF2_TEST_DROP is the percentage of UDP
+/// datagrams dropped on arrival once the link is open, LF2_TEST_ALL_RELIABLE sends
+/// every message on the reliable channel.
+fn test_drop() -> u32 {
+    std::env::var("LF2_TEST_DROP").ok().and_then(|s| s.parse().ok()).unwrap_or(0)
+}
+
+/// One link's connection: its UDP socket, its Rtc and its two data channels.
 struct Conn {
     peer: u32,
     sock: UdpSocket,
     local: SocketAddr,
     rtc: Rtc,
-    cid: Option<ChannelId>,
+    reliable: Option<ChannelId>,
+    fast: Option<ChannelId>,
+    /// The reliable channel is open.
     open: bool,
+    fast_open: bool,
     pending: std::collections::VecDeque<Vec<u8>>,
+    /// Messages for the fast channel; the oldest are dropped when it is not
+    /// keeping up, since the next INPUT message repeats them.
+    pending_fast: std::collections::VecDeque<Vec<u8>>,
     start: Instant,
     buf: Vec<u8>,
+    drop_percent: u32,
+    all_reliable: bool,
+    rng: u64,
 }
 
 impl Conn {
-    fn new(peer: u32, (sock, local, rtc): (UdpSocket, SocketAddr, Rtc), cid: Option<ChannelId>) -> Result<Conn, String> {
+    fn new(peer: u32, (sock, local, rtc): (UdpSocket, SocketAddr, Rtc)) -> Result<Conn, String> {
         sock.set_nonblocking(true).map_err(|e| e.to_string())?;
-        Ok(Conn { peer, sock, local, rtc, cid, open: false, pending: Default::default(), start: Instant::now(), buf: vec![0; 2000] })
+        Ok(Conn {
+            peer,
+            sock,
+            local,
+            rtc,
+            reliable: None,
+            fast: None,
+            open: false,
+            fast_open: false,
+            pending: Default::default(),
+            pending_fast: Default::default(),
+            start: Instant::now(),
+            buf: vec![0; 2000],
+            drop_percent: test_drop(),
+            all_reliable: std::env::var_os("LF2_TEST_ALL_RELIABLE").is_some(),
+            rng: 0x9e3779b97f4a7c15 ^ (peer as u64 + 1) ^ std::process::id() as u64,
+        })
+    }
+
+    /// Queue a message from the game on the channel it needs.
+    fn queue(&mut self, b: Vec<u8>) {
+        if lf2_sim::net::is_unreliable(&b) && !self.all_reliable && self.fast_open {
+            self.pending_fast.push_back(b);
+            while self.pending_fast.len() > 8 {
+                self.pending_fast.pop_front();
+            }
+        } else {
+            self.pending.push_back(b);
+        }
+    }
+
+    fn lose(&mut self) -> bool {
+        if self.drop_percent == 0 || !self.open {
+            return false;
+        }
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        self.rng % 100 < self.drop_percent as u64
     }
 
     /// Move the connection on: queued messages out, UDP in and out, events to the
     /// game. Err when it closed.
     fn poll(&mut self, ev: &Sender<LinkEvent>) -> Result<(), String> {
         if self.open {
-            if let Some(mut ch) = self.cid.and_then(|c| self.rtc.channel(c)) {
+            if let Some(mut ch) = self.reliable.and_then(|c| self.rtc.channel(c)) {
                 while let Some(b) = self.pending.front() {
                     match ch.write(true, b) {
                         Ok(true) => {
                             self.pending.pop_front();
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+        if self.fast_open {
+            if let Some(mut ch) = self.fast.and_then(|c| self.rtc.channel(c)) {
+                while let Some(b) = self.pending_fast.front() {
+                    match ch.write(true, b) {
+                        Ok(true) => {
+                            self.pending_fast.pop_front();
                         }
                         _ => break,
                     }
@@ -283,15 +357,27 @@ impl Conn {
                     let _ = self.sock.send_to(&t.contents, t.destination);
                 }
                 Output::Event(e) => match e {
-                    Event::ChannelOpen(id, _) => {
-                        self.cid = Some(id);
-                        self.open = true;
-                        let _ = ev.send(LinkEvent::Connected(self.peer));
+                    Event::ChannelOpen(id, label) => {
+                        if label == FAST {
+                            self.fast = Some(id);
+                            self.fast_open = true;
+                        } else {
+                            self.reliable = Some(id);
+                            self.open = true;
+                            let _ = ev.send(LinkEvent::Connected(self.peer));
+                        }
                     }
                     Event::ChannelData(d) => {
                         let _ = ev.send(LinkEvent::Data(self.peer, d.data));
                     }
-                    Event::ChannelClose(_) => return Err("The other player left.".into()),
+                    Event::ChannelClose(id) => {
+                        if Some(id) == self.fast {
+                            self.fast_open = false;
+                            self.pending_fast.clear();
+                        } else {
+                            return Err("The other player left.".into());
+                        }
+                    }
                     Event::IceConnectionStateChange(IceConnectionState::Disconnected) => return Err("Connection Lost!".into()),
                     _ => {}
                 },
@@ -303,6 +389,9 @@ impl Conn {
         let mut got = false;
         while let Ok((n, source)) = self.sock.recv_from(&mut self.buf) {
             got = true;
+            if self.lose() {
+                continue;
+            }
             if let Ok(contents) = self.buf[..n].try_into() {
                 let r = Receive { proto: Protocol::Udp, source, destination: self.local, contents };
                 self.rtc.handle_input(Input::Receive(Instant::now(), r)).map_err(|e| e.to_string())?;
@@ -325,7 +414,7 @@ fn take_outgoing(out: &Receiver<(u32, Vec<u8>)>, conns: &mut [Conn]) -> bool {
         match out.try_recv() {
             Ok((peer, b)) => {
                 if let Some(c) = conns.iter_mut().find(|c| c.peer == peer) {
-                    c.pending.push_back(b);
+                    c.queue(b);
                 }
             }
             Err(TryRecvError::Empty) => return true,
@@ -377,7 +466,7 @@ fn host_thread(url: &str, ev: &Sender<LinkEvent>, out: Receiver<(u32, Vec<u8>)>)
                 Some("offer") => {
                     let seat = m["seat"].clone();
                     let rtc = new_rtc(&stun)?;
-                    let mut c = Conn::new(next_peer, rtc, None)?;
+                    let mut c = Conn::new(next_peer, rtc)?;
                     next_peer += 1;
                     let sdp: SdpOffer = serde_json::from_value(m["offer"].clone()).map_err(|e| format!("bad offer: {}", e))?;
                     let answer = c.rtc.sdp_api().accept_offer(sdp).map_err(|e| e.to_string())?;
@@ -412,7 +501,8 @@ fn join_thread(url: &str, code: &str, ev: &Sender<LinkEvent>, out: Receiver<(u32
     };
     let (sock, local, mut rtc) = new_rtc(&stun)?;
     let mut api = rtc.sdp_api();
-    let cid = api.add_channel("lf2".into());
+    api.add_channel(RELIABLE.into());
+    api.add_channel_with_config(fast_config());
     let (offer, pending) = api.apply().ok_or("no offer")?;
     let code = code.trim().to_ascii_uppercase();
     ws_send(&mut ws, serde_json::json!({"type": "join", "code": code, "offer": offer}))?;
@@ -421,7 +511,7 @@ fn join_thread(url: &str, code: &str, ev: &Sender<LinkEvent>, out: Receiver<(u32
     let answer: SdpAnswer = serde_json::from_value(m["answer"].clone()).map_err(|e| format!("bad answer: {}", e))?;
     rtc.sdp_api().accept_answer(pending, answer).map_err(|e| e.to_string())?;
     drop(ws);
-    let mut conns = vec![Conn::new(0, (sock, local, rtc), Some(cid))?];
+    let mut conns = vec![Conn::new(0, (sock, local, rtc))?];
     loop {
         if !take_outgoing(&out, &mut conns) {
             return Ok(());
