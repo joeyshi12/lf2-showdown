@@ -156,10 +156,11 @@
       menu, <kbd>F5</kbd> changes the speed, and <kbd>F11</kbd> and <kbd>F12</kbd> change
       the volume. Click the game first so it gets your key presses and plays sound.</p>
     <h2>Network play</h2>
-    <p>Two players can play over the internet. On the title screen, choose network game.
-      One player chooses Waiting for Opponent and gets a room code. The other chooses
-      Connect to Opponent and types in that code. The browser and desktop versions can
-      play each other.</p>
+    <p>Up to four players can play over the internet, one per computer. On the title
+      screen, choose network game. One player chooses Waiting for Opponent and gets a
+      room code. The others choose Connect to Opponent and type in that code. When
+      everyone is listed, the first player presses <kbd>Enter</kbd> to start. The
+      browser and desktop versions can play each other.</p>
     <h2>Download</h2>
     <p>The Windows and Linux versions are on the
       <a href="https://github.com/joeyshi12/lf2-showdown/releases/latest">releases page</a>.
@@ -272,13 +273,15 @@ async function playMusic(name) {
   music = { src, gain, playing: true };
 }
 
-// The network game: the byte stream of the game (lf2_sim::net::NetSession) over a
-// WebRTC data channel, set up through the icebreaker rendezvous server with a room
-// code. Offers and answers carry all candidates (icebreaker does not pass trickled
-// ones), so each side waits for candidate gathering to finish first.
+// The network game: the messages of lf2_sim::net::NetSession over WebRTC data
+// channels, set up through the icebreaker rendezvous server with a room code. The
+// host has one link per joiner (up to three), numbered from 1; a joiner has one
+// link, to the host, numbered 0. Offers and answers carry all candidates
+// (icebreaker does not pass trickled ones), so each side waits for candidate
+// gathering to finish first.
 const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
 const net = {
-  ws: null, pc: null, ch: null,
+  ws: null, links: new Map(), nextPeer: 1, pendingOut: new Map(),
   gathered(pc) {
     return new Promise((done) => {
       if (pc.iceGatheringState === "complete") return done();
@@ -286,17 +289,23 @@ const net = {
       setTimeout(done, 3000);
     });
   },
+  // the rendezvous server failed, or a joiner lost its link to the host
   fail(msg) {
     if (!game) return;
-    game.net_closed(msg);
+    game.net_failed(msg);
     this.close(true);
   },
-  channel(ch) {
-    this.ch = ch;
+  channel(peer, ch) {
+    const link = this.links.get(peer);
+    link.ch = ch;
     ch.binaryType = "arraybuffer";
-    ch.onopen = () => { game.net_connected(); this.flush(); };
-    ch.onmessage = (e) => game.net_data(new Uint8Array(e.data));
-    ch.onclose = () => this.fail("The connection to the other player closed.");
+    ch.onopen = () => { game.net_connected(peer); this.flush(); };
+    ch.onmessage = (e) => game.net_data(peer, new Uint8Array(e.data));
+    ch.onclose = () => {
+      this.links.delete(peer);
+      if (peer === 0) this.fail("The connection to the other player closed.");
+      else game.net_closed(peer, "The other player left.");
+    };
   },
   socket(onmsg) {
     const ws = new WebSocket(RENDEZVOUS);
@@ -306,8 +315,8 @@ const net = {
       const m = JSON.parse(e.data);
       if (m.type === "error") {
         this.fail(m.reason === "no_room" ? "There is no game with that code." :
-          m.reason === "full" ? "That game already has two players." : (m.message || "rendezvous error"));
-      } else if (m.type === "closed") this.fail("The other player left.");
+          m.reason === "full" ? "That game is full." : (m.message || "rendezvous error"));
+      } else if (m.type === "closed") { if (!this.links.has(0)) this.fail("The other player left."); }
       else onmsg(m);
     };
     return ws;
@@ -318,10 +327,11 @@ const net = {
     let ice = [];
     const ws = this.socket(async (m) => {
       if (m.type === "hosted") { ice = m.ice_servers || []; this.code = m.code; game.net_code(m.code); }
-      else if (m.type === "offer" && !this.pc) {
+      else if (m.type === "offer") {
+        const peer = this.nextPeer++;
         const pc = new RTCPeerConnection({ iceServers: ice });
-        this.pc = pc;
-        pc.ondatachannel = (e) => this.channel(e.channel);
+        this.links.set(peer, { pc, ch: null });
+        pc.ondatachannel = (e) => this.channel(peer, e.channel);
         await pc.setRemoteDescription(m.offer);
         await pc.setLocalDescription(await pc.createAnswer());
         await this.gathered(pc);
@@ -334,43 +344,59 @@ const net = {
     this.close(true);
     game.net_join();
     const ws = this.socket(async (m) => {
-      if (m.type === "ice_servers" && !this.pc) {
+      if (m.type === "ice_servers" && !this.links.has(0)) {
         const pc = new RTCPeerConnection({ iceServers: m.ice_servers || [] });
-        this.pc = pc;
-        this.channel(pc.createDataChannel("lf2"));
+        this.links.set(0, { pc, ch: null });
+        this.channel(0, pc.createDataChannel("lf2"));
         await pc.setLocalDescription(await pc.createOffer());
         await this.gathered(pc);
         ws.send(JSON.stringify({ type: "join", code: code.trim().toUpperCase(), offer: pc.localDescription }));
-      } else if (m.type === "answer" && this.pc) {
-        await this.pc.setRemoteDescription(m.answer);
+      } else if (m.type === "answer" && this.links.has(0)) {
+        await this.links.get(0).pc.setRemoteDescription(m.answer);
       }
     });
     ws.onopen = () => ws.send(JSON.stringify({ type: "ice" }));
     // no data channel after 20 s: no direct route between the two networks
-    setTimeout(() => { if (this.pc && (!this.ch || this.ch.readyState !== "open")) this.fail("Could not connect to the other computer."); }, 20000);
+    setTimeout(() => {
+      const l = this.links.get(0);
+      if (l && (!l.ch || l.ch.readyState !== "open")) this.fail("Could not connect to the other computer.");
+    }, 20000);
   },
   close(keepGame) {
     // no more events from what is being closed (a second "closed" would replace the
     // first message)
-    for (const x of [this.ch, this.pc, this.ws]) {
+    const all = [this.ws];
+    for (const l of this.links.values()) all.push(l.ch, l.pc);
+    for (const x of all) {
       if (!x) continue;
       x.onclose = x.onerror = x.onmessage = x.onopen = null;
       try { x.close(); } catch (e) {}
     }
-    this.ws = this.pc = this.ch = null;
-    this.pendingOut = [];
+    this.ws = null;
+    this.links = new Map();
+    this.nextPeer = 1;
+    this.pendingOut = new Map();
     if (!keepGame && game) game.net_drop();
   },
   flush() {
     if (!game) return;
+    // net_outgoing: peer (1 byte), length (4 bytes), message, ...
     const b = game.net_outgoing();
-    if (b.length) this.pendingOut.push(b);
-    if (this.ch && this.ch.readyState === "open") {
-      for (const x of this.pendingOut) this.ch.send(x);
-      this.pendingOut = [];
+    const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    for (let p = 0; p + 5 <= b.length;) {
+      const peer = b[p], n = v.getUint32(p + 1, true);
+      if (!this.pendingOut.has(peer)) this.pendingOut.set(peer, []);
+      this.pendingOut.get(peer).push(b.slice(p + 5, p + 5 + n));
+      p += 5 + n;
+    }
+    for (const [peer, q] of this.pendingOut) {
+      const l = this.links.get(peer);
+      if (!l) { this.pendingOut.delete(peer); continue; }
+      if (!l.ch || l.ch.readyState !== "open") continue;
+      for (const m of q) l.ch.send(m);
+      q.length = 0;
     }
   },
-  pendingOut: [],
 };
 
 window.lf2Net = net;   // for tests (tools/web/browser_check.mjs)
