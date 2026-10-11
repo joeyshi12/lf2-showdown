@@ -82,6 +82,29 @@ pub fn clipboard_text() -> Option<String> {
     None
 }
 
+/// Put text on the clipboard with the desktop's clipboard program (PowerShell on
+/// Windows; wl-copy, xclip or xsel on Linux).
+pub fn copy_text(text: &str) {
+    use std::io::Write;
+    let tries: &[(&str, &[&str])] = if cfg!(target_os = "windows") {
+        &[("powershell", &["-NoProfile", "-Command", "$input | Set-Clipboard"])]
+    } else if cfg!(target_os = "macos") {
+        &[("pbcopy", &[])]
+    } else {
+        &[("wl-copy", &[]), ("xclip", &["-selection", "clipboard"]), ("xsel", &["-b", "-i"])]
+    };
+    for (prog, args) in tries {
+        if let Ok(mut c) = Command::new(prog).args(*args).stdin(std::process::Stdio::piped()).spawn() {
+            if let Some(mut i) = c.stdin.take() {
+                let _ = i.write_all(text.as_bytes());
+            }
+            let _ = c.wait();
+            return;
+        }
+    }
+    eprintln!("no clipboard program found; room code {}", text);
+}
+
 /// ShellExecuteA "open": a web page or a folder.
 pub fn open(target: &str) {
     let prog = if cfg!(target_os = "windows") {

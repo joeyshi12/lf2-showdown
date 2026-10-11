@@ -64,6 +64,12 @@ jobs:
           targets: x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@v2
 
+      # fonts-wine for the System font build.rs puts into the program
+      - name: install packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends fonts-wine
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

@@ -143,6 +143,8 @@ pub enum MenuRequest {
     NetConnect,
     /// Network game: the host pressed Enter to start (`NetSession::start`).
     NetStart,
+    /// Put this text on the clipboard (the room code).
+    CopyText(String),
     /// Network game: leave the room or close the connection.
     NetClose,
     /// Write data\\control.txt with this text.

@@ -117,6 +117,9 @@ impl Game {
         if smooth {
             self.tween.before_tick(w);
         }
+        if let Some(n) = self.net.as_mut() {
+            n.set_clock(time_ms);
+        }
         match self.net.as_mut().filter(|n| n.in_game()) {
             Some(n) => {
                 n.advance(w, &mut self.keys);
@@ -186,8 +189,7 @@ impl Game {
         let Some(n) = self.net.as_mut() else { return };
         if n.is_host() {
             if !n.in_game() {
-                n.error = Some(message.to_string());
-                self.world.net_connect_failed();
+                self.world.net_connect_failed(message);
             }
         } else {
             n.on_closed(&mut self.world, 0, message);
@@ -223,18 +225,13 @@ impl Game {
 
     /// The number of computers in the room the waiting screen lists.
     pub fn net_players(&self) -> u32 {
-        self.world.net_players.len() as u32
+        self.world.net_ui.players.len() as u32
     }
 
     /// For tests: the state hashes of the network game so far, "frame hash" per
     /// line (examples/net_peer prints the same).
     pub fn net_log(&self) -> String {
         self.net.as_ref().map(|n| n.log.iter().map(|(f, h)| format!("{} {:016x}", f, h)).collect::<Vec<_>>().join("\n")).unwrap_or_default()
-    }
-
-    /// A message for the player when the connection failed, else "".
-    pub fn net_error(&mut self) -> String {
-        self.net.as_mut().and_then(|n| n.error.take()).unwrap_or_default()
     }
 
     /// With `smooth` ticks: draw the picture `t` (0..1) of the way from the tick
@@ -268,7 +265,7 @@ impl Game {
 
     /// Text pasted from the clipboard: goes into the room code on the client screen.
     pub fn paste(&mut self, text: &str) {
-        lf2_sim::menu::title::paste_room_code(&mut self.world, text);
+        lf2_sim::menu::net_menu::paste_room_code(&mut self.world, text);
     }
 
     /// The picture last drawn (by `step` or `draw_smooth`): 794 x 550 RGBA.
@@ -331,6 +328,7 @@ impl Game {
                 MenuRequest::NetHost => out += "net-host\n",
                 MenuRequest::NetConnect => out += &format!("net-join {}\n", self.world.room_code_typed()),
                 MenuRequest::NetClose => out += "net-close\n",
+                MenuRequest::CopyText(t) => out += &format!("copy {}\n", t),
                 MenuRequest::NetStart => {
                     if let Some(n) = self.net.as_mut() {
                         n.start(&mut self.world);

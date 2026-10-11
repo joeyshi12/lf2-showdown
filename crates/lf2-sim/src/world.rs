@@ -33,8 +33,8 @@ pub struct World {
     /// Network game: the packet the next frame that reads keys takes as the one
     /// received (see `rollback.rs`, which fills it with every computer's inputs).
     pub net_in: [u8; crate::net::PACKET],
-    /// Network game: the names of the computers in the room, for the waiting screens.
-    pub net_players: Vec<String>,
+    /// Network game: what the network screens show (see `menu::net_menu`).
+    pub net_ui: crate::net::NetUi,
     /// The platform's local time (year, month, day, hour, minute, second), for the
     /// names of recordings (GetLocalTime).
     pub local_time: [u16; 6],
@@ -80,7 +80,7 @@ impl World {
             local_time: [0; 6],
             ads_removed: false,
             net_in: [0; crate::net::PACKET],
-            net_players: Vec::new(),
+            net_ui: Default::default(),
             gd,
             unported_hits: Vec::new(),
             sounds: Vec::new(),

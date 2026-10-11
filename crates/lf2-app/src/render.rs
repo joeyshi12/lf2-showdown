@@ -504,12 +504,65 @@ impl Frame {
                         self.blit(s, *x, *y, *clip, *key);
                     }
                 }
+                Draw::Label { text, rgb, x, y, align, scale, pad } => self.label(a, text, *rgb, *x, *y, *align, *scale, *pad),
                 Draw::Text { text, bk, color, x, y } => {
                     #[cfg(windows)]
                     if crate::gdi_text::text_out(&mut self.px, W, H, text, *bk, *color, *x, *y) {
                         continue;
                     }
                     self.system_text(a, text, colorref(*bk), colorref(*color), *x, *y)
+                }
+            }
+        }
+    }
+
+    /// A `Draw::Label`: the System font built into the program, or without it the
+    /// game's WORDS0 font, drawn without a background.
+    #[allow(clippy::too_many_arguments)]
+    pub fn label(&mut self, a: &Assets, text: &[u8], rgb: u32, x: i32, y: i32, align: i8, scale: i32, pad: Option<u32>) {
+        let font = crate::exe_image::system_font();
+        let s = scale.max(1);
+        let w = s * match font {
+            Some(f) => f.width(text),
+            None => 8 * text.len() as i32,
+        };
+        let h = s * font.map_or(16, |f| f.height);
+        let x = match align {
+            -1 => x,
+            0 => x - w / 2,
+            _ => x - w,
+        };
+        if let Some(bg) = pad {
+            self.fill(x - 6, y, w + 12, h, bg);
+        }
+        let dot = |px: &mut Vec<u32>, tx: i32, ty: i32| {
+            for dy in 0..s {
+                for dx in 0..s {
+                    let (u, v) = (x + tx * s + dx, y + ty * s + dy);
+                    if (0..W).contains(&u) && (0..H).contains(&v) {
+                        px[(v * W + u) as usize] = rgb;
+                    }
+                }
+            }
+        };
+        if let Some(f) = font {
+            let px = &mut self.px;
+            f.draw(text, 0, 0, |tx, ty, on| {
+                if on {
+                    dot(px, tx, ty);
+                }
+            });
+            return;
+        }
+        let Some(f) = a.res.get("WORDS0") else { return };
+        for (i, &c) in text.iter().enumerate() {
+            let Some(cell) = f.cells.get(c as usize) else { continue };
+            for yy in 0..cell.h {
+                for xx in 0..cell.w {
+                    let (sx, sy) = (cell.x + xx, cell.y + yy);
+                    if sx >= 0 && sy >= 0 && sx < f.img.w as i32 && sy < f.img.h as i32 && f.img.px[(sy * f.img.w as i32 + sx) as usize] != 0 {
+                        dot(&mut self.px, 8 * i as i32 + xx, yy);
+                    }
                 }
             }
         }

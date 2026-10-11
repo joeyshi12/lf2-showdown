@@ -131,7 +131,7 @@ impl Lan {
                     _ => {}
                 }
             }
-            if let Some(e) = self.peers[i].s.error.take() {
+            if let Some(e) = self.peers[i].w.net_ui.error.take() {
                 panic!("computer {}: {}", i, e);
             }
             self.send_all(i);
@@ -233,7 +233,8 @@ fn run(p: Profile) {
         }
         let y0 = peer.w.g.m.i32(lf2_sim::menu::main_menu::MENU_Y);
         Lan::click(&mut peer.w, 0x150, y0 + 0x100);
-        Lan::click(&mut peer.w, 0x150, if i == 0 { 0x118 } else { 0x138 });
+        // "Host a game" or "Join a game"
+        Lan::click(&mut peer.w, 397, if i == 0 { 243 } else { 277 });
         peer.w.requests.clear();
     }
     let host = &mut lan.peers[0];
@@ -246,7 +247,7 @@ fn run(p: Profile) {
     for _ in 0..30 {
         lan.tick();
     }
-    assert_eq!(lan.peers[0].w.net_players.len(), n, "the host lists every computer");
+    assert_eq!(lan.peers[0].w.net_ui.players.len(), n, "the host lists every computer");
     // the host presses Enter
     lan.peers[0].keys[0x0d] = b'd';
     for _ in 0..3 {
@@ -268,6 +269,8 @@ fn run(p: Profile) {
         fought |= w.g.match_phase() == 0 && (0..n).all(|s| w.exists(s));
     }
     assert!(fought, "the match ran with every computer's fighter");
+    let readout = lan.peers[1].w.draw.iter().any(|d| matches!(d, lf2_sim::draw::Draw::Label { text, .. } if String::from_utf8_lossy(text).contains("ms  rollback")));
+    assert!(readout, "the game shows the round-trip time and rollback readout");
     // stop pressing keys and let every computer's inputs arrive
     let target = lan.peers.iter().map(|p| p.s.rollback().unwrap().frame()).max().unwrap() + 4;
     for _ in 0..200 {
@@ -335,4 +338,48 @@ fn two_computers_slow_connection() {
 #[test]
 fn four_computers_with_loss() {
     run(Profile { computers: 4, latency_ms: 60, jitter_ms: 50, loss: 10 });
+}
+
+/// The room code screen: capitals without Shift, four characters at most, nothing
+/// typed while Ctrl is held, pasting, Backspace, and Enter joins once four are in.
+#[test]
+fn room_code_entry() {
+    let Some(dir) = lf2_data::game_dir_from_env() else { return };
+    let exe = lf2_data::read_exe(&dir).unwrap();
+    let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
+    let controls = lf2_data::controls::load(&dir).unwrap_or_default();
+    let mut w = World::new_title(gd, &exe, &controls, None, 3);
+    w.ads_removed = true;
+    for _ in 0..5 {
+        w.step();
+    }
+    let y0 = w.g.m.i32(lf2_sim::menu::main_menu::MENU_Y);
+    Lan::click(&mut w, 0x150, y0 + 0x100);
+    Lan::click(&mut w, 397, 277);
+    w.requests.clear();
+    let press = |w: &mut World, vks: &[usize]| {
+        let mut keys = [b'u'; 256];
+        for &k in vks {
+            keys[k] = b'd';
+        }
+        w.set_keys(&keys);
+        w.step();
+        w.set_keys(&[b'u'; 256]);
+        w.step();
+    };
+    press(&mut w, &[A]);
+    press(&mut w, &[0x32]);
+    assert_eq!(w.room_code_typed(), "A2");
+    press(&mut w, &[0x11, 0x56]);
+    assert_eq!(w.room_code_typed(), "A2", "Ctrl+V types nothing");
+    lf2_sim::menu::net_menu::paste_room_code(&mut w, " b-c d ");
+    assert_eq!(w.room_code_typed(), "A2BC", "pasted in capitals, four at most");
+    press(&mut w, &[0x08]);
+    assert_eq!(w.room_code_typed(), "A2B");
+    press(&mut w, &[0x0d]);
+    assert!(!w.requests.contains(&MenuRequest::NetConnect), "Enter does nothing with three characters");
+    press(&mut w, &[0x5a]);
+    press(&mut w, &[0x0d]);
+    assert!(w.requests.contains(&MenuRequest::NetConnect), "Enter joins");
+    assert_eq!(w.room_code_typed(), "A2BZ");
 }

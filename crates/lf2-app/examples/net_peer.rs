@@ -18,6 +18,9 @@ const W: usize = 0x57;
 const A: usize = 0x41;
 const S: usize = 0x53;
 const D: usize = 0x44;
+/// "Host a game" and "Join a game" on the network menu.
+const HOST: (i32, i32) = (397, 243);
+const JOIN: (i32, i32) = (397, 277);
 
 /// The keys held at frame `t` of the game (the script of tests/network.rs, by
 /// frames run instead of frames of the clock). The
@@ -112,11 +115,11 @@ fn main() {
     let y0 = w.g.m.i32(MENU_Y);
     click(&mut w, &mut net, 0x150, y0 + 0x100);
     if host {
-        click(&mut w, &mut net, 0x150, 0x118);
+        click(&mut w, &mut net, HOST.0, HOST.1);
     } else {
-        click(&mut w, &mut net, 0x150, 0x138);
+        click(&mut w, &mut net, JOIN.0, JOIN.1);
         let code = a.get(2).expect("join CODE");
-        lf2_sim::menu::title::paste_room_code(&mut w, code);
+        lf2_sim::menu::net_menu::paste_room_code(&mut w, code);
         keys[0x0d] = b'd';
         w.set_keys(&keys);
         w.step();
@@ -132,7 +135,7 @@ fn main() {
             std::process::exit(1);
         }
         net.pump(&mut w);
-        if let Some(e) = net.take_error() {
+        if let Some(e) = w.net_ui.error.take() {
             eprintln!("error: {}", e);
             std::process::exit(1);
         }
@@ -158,7 +161,7 @@ fn main() {
             }
         } else {
             // the host presses Enter once everyone is in
-            keys[0x0d] = if host && w.net_players.len() >= want { b'd' } else { b'u' };
+            keys[0x0d] = if host && w.net_ui.players.len() >= want { b'd' } else { b'u' };
             w.set_keys(&keys);
             w.step();
         }

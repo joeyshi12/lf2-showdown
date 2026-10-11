@@ -5,10 +5,15 @@ use crate::rtc::{rendezvous_url, Link, LinkEvent};
 use lf2_sim::net::NetSession;
 use lf2_sim::World;
 
-#[derive(Default)]
 pub struct Net {
     link: Option<(Link, NetSession)>,
-    error: Option<String>,
+    start: std::time::Instant,
+}
+
+impl Default for Net {
+    fn default() -> Net {
+        Net { link: None, start: std::time::Instant::now() }
+    }
 }
 
 impl Net {
@@ -35,11 +40,6 @@ impl Net {
         self.flush();
     }
 
-    /// A message for the player since the last call (a failed connection).
-    pub fn take_error(&mut self) -> Option<String> {
-        self.error.take()
-    }
-
     /// True while the game runs over the network: call `advance` instead of
     /// `World::step`.
     pub fn in_game(&self) -> bool {
@@ -54,6 +54,7 @@ impl Net {
     /// once per frame.
     pub fn pump(&mut self, world: &mut World) {
         let Some((link, s)) = self.link.as_mut() else { return };
+        s.set_clock(self.start.elapsed().as_millis() as u32);
         while let Some(e) = link.poll() {
             match e {
                 LinkEvent::Code(c) => s.on_code(world, &c),
@@ -64,17 +65,13 @@ impl Net {
                     // its only link
                     s.on_closed(world, p.unwrap_or(0), &msg);
                     if p.is_none() && s.is_host() && !s.in_game() {
-                        self.error = Some(msg);
-                        world.net_connect_failed();
+                        world.net_connect_failed(&msg);
                     }
                     if p.is_none() || !s.is_host() {
                         break;
                     }
                 }
             }
-        }
-        if let Some(e) = s.error.take() {
-            self.error = Some(e);
         }
         self.flush();
     }

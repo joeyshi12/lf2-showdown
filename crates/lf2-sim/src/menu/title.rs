@@ -8,8 +8,8 @@
 use crate::menu::main_menu::{MenuRequest, MENU_CLIP, MENU_CLIP5, MENU_Y, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
 use crate::world::{World, KEYS};
 
-const SCREEN: u32 = 0x44d064;
-const PREV_CLICK: u32 = 0x44d060;
+pub(crate) const SCREEN: u32 = 0x44d064;
+pub(crate) const PREV_CLICK: u32 = 0x44d060;
 const ADS: u32 = 0x450be8;
 const ADS_ANIM: u32 = 0x4511f4;
 const KEY_SLOT: u32 = 0x4511e0;
@@ -23,24 +23,6 @@ const MENU_CLIP7: u32 = 0x451188;
 /// Set the title screen state (`DAT_0044d064`).
 pub fn set_screen(w: &mut World, v: i32) {
     w.tw(SCREEN, v);
-}
-
-/// Paste `text` into the room code on the client screen: letters as capitals,
-/// spaces and other characters that are not printable ASCII left out, up to the
-/// field's 50 characters. Nothing happens on other screens.
-pub fn paste_room_code(w: &mut World, text: &str) {
-    if w.t(SCREEN) != 3 || w.t(0x4511b0) != 0 {
-        return;
-    }
-    for c in text.bytes().filter(|c| c.is_ascii_graphic()) {
-        let n = w.t(0x4511dc);
-        if n >= 0x32 {
-            break;
-        }
-        w.g.m.set_u8(crate::net::SERVER_IP + n as u32, c.to_ascii_uppercase());
-        w.g.m.set_u8(crate::net::SERVER_IP + n as u32 + 1, 0);
-        w.tw(0x4511dc, n + 1);
-    }
 }
 
 /// `key_char` (0x422f60): the character a key types (caps lock taken as off).
@@ -120,7 +102,7 @@ impl World {
         }
     }
 
-    fn clicked(&self) -> bool {
+    pub(crate) fn clicked(&self) -> bool {
         self.t(PREV_CLICK) == 0 && self.t(MOUSE_CLICK) == 1
     }
 
@@ -245,10 +227,7 @@ impl World {
             7 => self.title_recording(),
             8 => self.title_challenge(),
             -1 => self.title_net_wait(),
-            1 => self.title_net(),
-            2 => self.title_net_server(),
-            3 => self.title_net_client(),
-            4 => self.title_net_connected(),
+            1..=5 => self.net_screens(),
             _ => {}
         }
         let x = self.t(MOUSE_X).min(0x307);
@@ -655,27 +634,6 @@ impl World {
         }
     }
 
-    /// The picture all network screens share: the menu background, the title, the
-    /// frame, and the room code once the rendezvous server gave one (the original
-    /// shows " Your IP Address: ..." there, 0x427d0x).
-    fn net_screen_base(&mut self) {
-        if self.t(0x4511ac) == 0 {
-            self.load_menu_background();
-        }
-        self.draw_menu_background(0);
-        self.blit(MENU_CLIP, 0x9b, 0x69, 1, true);
-        self.blit(MENU_CLIP, 0xfd, 0xde, 3, true);
-        self.blit(MENU_CLIP, 0xfd, 0x14f, 0xe, true);
-        let code = self.tstr(crate::net::LOCAL_IP, 200);
-        // the picture's own " Your IP Address:" is covered, then the code drawn
-        self.fill(0x121, 0xfb, 0xb4, 0x10, 0x001e50);
-        if !code.is_empty() {
-            let mut t = b" Room code: ".to_vec();
-            t.extend_from_slice(&code);
-            self.text(&t, 0x501e00, 0xffffff, 0x121, 0xfb);
-        }
-    }
-
     /// The progress dots of the waiting screens: `count` advances every 150 ms of the
     /// platform clock (`flag` is the bit of 0x4511f0 that says the clock was read).
     fn net_dots(&mut self, flag: i32, at: u32, count: u32, y: i32, x0: i32) {
@@ -707,202 +665,5 @@ impl World {
             }
         }
         self.tw(0x4511e4, self.t(0x4511e4) + 1);
-    }
-
-    /// State 1: server or client (0x427cxx).
-    fn title_net(&mut self) {
-        self.net_screen_base();
-        let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
-        let click = self.clicked();
-        // the original draws a banner here (MENU_CLIP5 cells 3 and 4, 0x170, 0x1c1)
-        // that opens http://lf2.net/forum, which no longer exists; it is left out
-        if !(0x103 < mx && mx < 0x224) {
-            return;
-        }
-        let mut item = 0;
-        if 0x111 < my && my < 0x12d {
-            item = 1;
-        }
-        if 0x130 < my && my < 0x14b {
-            item = 2;
-        }
-        if my < 0x150 || 0x169 < my {
-            if item == 1 {
-                self.blit(MENU_CLIP, 0x103, 0x112, 5, true);
-                if click {
-                    self.buffer_sounds.push("data\\m_ok.wav");
-                    self.tw(SCREEN, 2);
-                    self.requests.push(MenuRequest::NetHost);
-                }
-            } else if item == 2 {
-                self.blit(MENU_CLIP, 0x103, 0x130, 6, true);
-                if click {
-                    self.buffer_sounds.push("data\\m_ok.wav");
-                    self.tw(SCREEN, 3);
-                    self.tw(0x4511dc, 0);
-                    self.g.m.set_u8(crate::net::SERVER_IP, 0);
-                }
-            }
-        } else {
-            self.blit(MENU_CLIP, 0x149, 0x150, 0xc, true);
-            if click {
-                // back
-                self.buffer_sounds.push("data\\m_cancel.wav");
-                self.tw(SCREEN, 0);
-                self.tw(0x44d780, -1);
-                self.free_menu_background();
-                self.requests.push(MenuRequest::NetClose);
-            }
-        }
-    }
-
-    /// State 2: the server waits for a client (0x427fxx).
-    fn title_net_server(&mut self) {
-        self.net_screen_base();
-        self.blit(MENU_CLIP, 0xec, 0x122, 10, true);
-        let flags = self.t(0x4511f0);
-        if flags & 2 == 0 {
-            self.tw(0x4511f0, flags | 2);
-            self.tw(0x4511d8, self.time_ms as i32);
-        }
-        if 0x96 < self.time_ms.wrapping_sub(self.t(0x4511d8) as u32) {
-            self.tw(0x4511d4, (self.t(0x4511d4) + 1) % 0xe);
-            self.tw(0x4511d8, self.time_ms as i32);
-        }
-        // the computers in the room; Enter starts the game once another one is in
-        let enter = KEYS + 0xd;
-        if self.net_players.len() >= 2 && self.g.m.u8(enter) == b'd' {
-            self.g.m.set_u8(enter, b'u');
-            self.buffer_sounds.push("data\\m_ok.wav");
-            self.requests.push(MenuRequest::NetStart);
-        }
-        let hint: &[u8] = if self.net_players.len() >= 2 { b"Press Enter to start" } else { b"Waiting for players..." };
-        self.net_player_list(hint);
-        let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
-        if 0x141 < mx && mx < 0x1d9 && 0x168 < my && my < 0x183 {
-            self.blit(MENU_CLIP, 0x142, 0x169, 0xc, true);
-            if self.clicked() {
-                self.buffer_sounds.push("data\\m_cancel.wav");
-                self.tw(SCREEN, 1);
-                crate::net::set_room_code(self, "");
-                self.net_players.clear();
-                self.requests.push(MenuRequest::NetClose);
-            }
-        }
-        for i in 0..self.t(0x4511d4) {
-            self.fill(0x119 + 0x14 * i, 0x156, 5, 0xc, 0x577fd7);
-        }
-    }
-
-    /// State 3: the client types the server's address and connects (0x4281xx).
-    fn title_net_client(&mut self) {
-        self.net_screen_base();
-        let enter = KEYS + 0xd;
-        if self.t(0x4511b0) == 0 {
-            let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
-            let on_connect = !(mx < 0xef || 0x185 < mx || my < 0x165 || 0x17e < my);
-            if on_connect && self.clicked() {
-                self.g.m.set_u8(enter, b'd');
-            } else if self.g.m.u8(enter) != b'd' {
-                self.blit(MENU_CLIP, 0xdb, 0x10c, 4, true);
-                // the picture asks for the opponent's IP address; ask for the code
-                self.fill(0xe4, 0x114, 0x156, 0x28, 0x122565);
-                self.text(b"Please type the room code:", 0x652512, 0xd8775a, 0x124, 0x11f);
-                if 0x19a < mx && mx < 0x232 && 0x164 < my && my < 0x17f {
-                    self.blit(MENU_CLIP, 0x19b, 0x165, 0xc, true);
-                    if self.clicked() {
-                        self.buffer_sounds.push("data\\m_cancel.wav");
-                        self.tw(SCREEN, 1);
-                    }
-                }
-                if 0xee < mx && mx < 0x186 && 0x164 < my && my < 0x17f {
-                    self.blit(MENU_CLIP, 0xef, 0x165, 0xd, true);
-                }
-                let ip = self.tstr(crate::net::SERVER_IP, 0x33);
-                self.text(&ip, 0x501e00, 0xffffff, 0x153, 0x147);
-            }
-        }
-        // typing the room code, in capitals (the original types the address as
-        // key_char gives it); with Ctrl held nothing is typed, so Ctrl+V only pastes
-        let shift = self.g.m.u8(KEYS + 0x10) == b'd';
-        let ctrl = self.g.m.u8(KEYS + 0x11) == b'd';
-        for vk in 0..300u32 {
-            if self.g.m.u8(KEYS + vk) != b'd' {
-                continue;
-            }
-            if ctrl && vk != 0x11 {
-                self.g.m.set_u8(KEYS + vk, b'u');
-                continue;
-            }
-            let c = key_char(vk as i32, shift).to_ascii_uppercase();
-            let n = self.t(0x4511dc);
-            if c != 0 && vk != 8 {
-                if n < 0x32 && vk != 0xd {
-                    self.g.m.set_u8(crate::net::SERVER_IP + n as u32, c);
-                    self.g.m.set_u8(crate::net::SERVER_IP + n as u32 + 1, 0);
-                    self.tw(0x4511dc, n + 1);
-                    self.g.m.set_u8(KEYS + vk, b'u');
-                }
-                continue;
-            }
-            if vk == 8 && 0 < n {
-                self.g.m.set_u8(KEYS + vk, b'u');
-                self.g.m.set_u8(crate::net::SERVER_IP + n as u32 - 1, 0);
-                self.tw(0x4511dc, n - 1);
-            }
-        }
-        if self.g.m.u8(enter) == b'd' {
-            self.buffer_sounds.push("data\\m_ok.wav");
-            self.g.m.set_u8(enter, b'u');
-            self.tw(0x4511b0, 1);
-            self.blit(MENU_CLIP, 0xec, 0x122, 0xb, true);
-        } else if self.t(0x4511b0) == 1 {
-            // the original connects here, inside the frame; the platform does it
-            // while state 4 waits for the host to start
-            self.tw(0x4511b0, 0);
-            self.tw(SCREEN, 4);
-            self.requests.push(MenuRequest::NetConnect);
-        }
-    }
-
-    /// Below the network screen's box: the computers in the room, then `hint`.
-    fn net_player_list(&mut self, hint: &[u8]) {
-        let n = self.net_players.len() as i32;
-        self.fill(0xe4, 0x18a, 0x156, 0x1c + 0x10 * n, 0x122565);
-        for (k, name) in self.net_players.clone().iter().enumerate() {
-            let line = if k == 0 { format!("{} (host)", name) } else { name.clone() };
-            self.text(line.as_bytes(), 0x652512, 0xffffff, 0xf4, 0x190 + 0x10 * k as i32);
-        }
-        self.text(hint, 0x652512, 0xd8775a, 0xf4, 0x192 + 0x10 * n);
-    }
-
-    /// State 4: connecting, then waiting for the host to start (0x4286xx).
-    fn title_net_connected(&mut self) {
-        let flags = self.t(0x4511f0);
-        if flags & 4 == 0 {
-            self.tw(0x4511f0, flags | 4);
-            self.tw(0x4511d0, self.time_ms as i32);
-        }
-        if 0x96 < self.time_ms.wrapping_sub(self.t(0x4511d0) as u32) {
-            self.tw(0x4511cc, (self.t(0x4511cc) + 1) % 0xe);
-            self.tw(0x4511d0, self.time_ms as i32);
-        }
-        self.net_screen_base();
-        self.blit(MENU_CLIP, 0xec, 0x122, 0xb, true);
-        let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
-        if 0x141 < mx && mx < 0x1d9 && 0x168 < my && my < 0x183 {
-            self.blit(MENU_CLIP, 0x142, 0x169, 0xc, true);
-            if self.clicked() {
-                self.tw(SCREEN, 1);
-                self.net_players.clear();
-                self.requests.push(MenuRequest::NetClose);
-            }
-        }
-        for i in 0..self.t(0x4511cc) {
-            self.fill(0x119 + 0x14 * i, 0x156, 5, 0xc, 0x577fd7);
-        }
-        if !self.net_players.is_empty() {
-            self.net_player_list(b"Waiting for the host to start");
-        }
     }
 }
