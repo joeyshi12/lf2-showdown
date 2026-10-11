@@ -23,7 +23,8 @@ struct Profile {
     computers: usize,
     latency_ms: u64,
     jitter_ms: u64,
-    /// Of every 100 INPUT messages, this many are lost.
+    /// Of every 100 messages on the unreliable channel (INPUT, PING, PONG), this many
+    /// are lost. The others arrive in order, as on the reliable channel.
     loss: u64,
 }
 
@@ -73,12 +74,12 @@ impl Lan {
     fn send_all(&mut self, from: usize) {
         for (id, m) in self.peers[from].s.take_outgoing() {
             let to = if from == 0 { id as usize } else { 0 };
-            let input = m[0] == 3;
-            if input && self.rand(100) < self.p.loss {
+            let fast = lf2_sim::net::is_unreliable(&m);
+            if fast && self.rand(100) < self.p.loss {
                 continue;
             }
             let mut at = self.now + self.p.latency_ms + self.rand(self.p.jitter_ms + 1);
-            if !input {
+            if !fast {
                 at = at.max(self.ordered[from][to]);
                 self.ordered[from][to] = at;
             }
