@@ -86,9 +86,7 @@ impl World {
             self.data_loaded();
         }
         self.match_frame();
-        if !self.net_waiting {
-            self.g.m.set_i32(0x457580, 0);
-        }
+        self.g.m.set_i32(0x457580, 0);
     }
 
     pub fn unported(&mut self, section: &'static str) {
@@ -129,21 +127,18 @@ impl World {
         // F-keys (pause, single step, cheats) and network exchange (0x41bf36)
         if hf == 0 {
             if self.net_role() > 0 {
-                // the frame stops here until the platform has exchanged the packets
-                self.net_out = Some(self.net_build_packet());
-                self.net_waiting = true;
-                return;
+                // the original sends its packet here and waits for the other
+                // computer's; with rollback (rollback.rs) every computer's inputs for
+                // this frame are already in net_in
+                for (k, &b) in self.net_in.clone().iter().enumerate() {
+                    self.g.m.set_u8(crate::net::IN + k as u32, b);
+                }
             } else if self.g.demo() != 0 {
                 self.fkeys_replay();
             } else {
                 self.fkeys();
             }
         }
-        self.match_frame_after_exchange();
-    }
-
-    /// The rest of match_frame after the F-keys or the network exchange (0x41cf12).
-    pub(crate) fn match_frame_after_exchange(&mut self) {
         let hf = self.g.half_frame();
         if hf == 0 && self.net_role() > 0 {
             self.net_apply_packet();
@@ -221,7 +216,6 @@ impl World {
                             }
                         }
                     }
-                    self.net_put_keys(slot);
                     if self.g.recording() != 0 {
                         // the frame's record: up down left right attack jump defend
                         let o = &self.objs[slot];

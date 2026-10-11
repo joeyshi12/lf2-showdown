@@ -1,9 +1,9 @@
-//! A two-computer link over a WebRTC data channel, set up through an icebreaker
-//! rendezvous server (https://github.com/joeyshi12/icebreaker): the host reserves a
-//! room and gets a four-character code, the joiner sends an offer with the code, the
-//! host answers. After that the server is out of the way and the bytes go peer to
-//! peer over UDP. The link carries the same byte stream the TCP game does (see
-//! lf2_sim::net), as messages that the receiver joins back together.
+//! The network game's links: WebRTC data channels set up through an icebreaker
+//! rendezvous server (https://github.com/joeyshi12/icebreaker). The host reserves a
+//! room and gets a four-character code; each joiner (up to three) sends an offer with
+//! the code, and the host answers it. After that the server is out of the way and
+//! the messages of lf2_sim::net::NetSession go peer to peer over UDP, joiners to the
+//! host and back.
 //!
 //! Candidates are not trickled (icebreaker passes only the offer and the answer), so
 //! both SDPs carry them: the host candidate of the UDP socket and the server-reflexive
@@ -27,22 +27,25 @@ pub fn rendezvous_url() -> String {
     std::env::var("LF2_RENDEZVOUS").unwrap_or_else(|_| DEFAULT_URL.into())
 }
 
-/// What the link reports.
+/// What the links report. Peers are numbered as NetSession expects: the host's
+/// joiners from 1 in the order they came, a joiner's host 0.
 #[derive(Debug)]
 pub enum LinkEvent {
-    /// Host: the room code to give the other player.
+    /// Host: the room code to give the other players.
     Code(String),
-    /// The data channel is open.
-    Connected,
-    /// Bytes from the other computer.
-    Data(Vec<u8>),
-    /// The link failed or closed, with a message for the player.
-    Closed(String),
+    /// A data channel is open.
+    Connected(u32),
+    /// A message from a peer.
+    Data(u32, Vec<u8>),
+    /// A link failed or closed, with a message for the player. `None`: all of them
+    /// (the rendezvous server could not be reached, or the room closed).
+    Closed(Option<u32>, String),
 }
 
-/// The game side of a link: send bytes, poll events. The link runs on its own thread.
+/// The game side of the links: send messages, poll events. The links run on their
+/// own thread.
 pub struct Link {
-    tx: Sender<Vec<u8>>,
+    tx: Sender<(u32, Vec<u8>)>,
     rx: Receiver<LinkEvent>,
 }
 
@@ -55,26 +58,26 @@ impl Link {
         Self::spawn(move |ev, out| join_thread(&url, &code, ev, out))
     }
 
-    fn spawn(f: impl FnOnce(&Sender<LinkEvent>, Receiver<Vec<u8>>) -> Result<(), String> + Send + 'static) -> Link {
+    fn spawn(f: impl FnOnce(&Sender<LinkEvent>, Receiver<(u32, Vec<u8>)>) -> Result<(), String> + Send + 'static) -> Link {
         let (tx, out_rx) = channel();
         let (ev_tx, rx) = channel();
         std::thread::spawn(move || {
             if let Err(e) = f(&ev_tx, out_rx) {
-                let _ = ev_tx.send(LinkEvent::Closed(e));
+                let _ = ev_tx.send(LinkEvent::Closed(None, e));
             }
         });
         Link { tx, rx }
     }
 
-    pub fn send(&self, bytes: &[u8]) {
-        let _ = self.tx.send(bytes.to_vec());
+    pub fn send(&self, peer: u32, bytes: &[u8]) {
+        let _ = self.tx.send((peer, bytes.to_vec()));
     }
 
     pub fn poll(&self) -> Option<LinkEvent> {
         match self.rx.try_recv() {
             Ok(e) => Some(e),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(LinkEvent::Closed("the connection closed".into())),
+            Err(TryRecvError::Disconnected) => Some(LinkEvent::Closed(None, "the connection closed".into())),
         }
     }
 }
@@ -92,6 +95,14 @@ fn ws_connect(url: &str) -> Result<Ws, String> {
     }
     .map_err(|e| e.to_string())?;
     Ok(ws)
+}
+
+fn ws_timeout(ws: &mut Ws, t: Duration) {
+    let _ = match ws.get_mut() {
+        MaybeTlsStream::Plain(s) => s.set_read_timeout(Some(t)),
+        MaybeTlsStream::Rustls(s) => s.sock.set_read_timeout(Some(t)),
+        _ => Ok(()),
+    };
 }
 
 fn ws_send(ws: &mut Ws, v: serde_json::Value) -> Result<(), String> {
@@ -118,7 +129,7 @@ fn ws_wait(ws: &mut Ws, types: &[&str], timeout: Duration) -> Result<serde_json:
             if ty == "error" {
                 return Err(match m["reason"].as_str() {
                     Some("no_room") => "There is no game with that code.".into(),
-                    Some("full") => "That game already has two players.".into(),
+                    Some("full") => "That game is full.".into(),
                     _ => m["message"].as_str().unwrap_or("rendezvous error").to_string(),
                 });
             }
@@ -231,45 +242,167 @@ fn new_rtc(stun: &[String]) -> Result<(UdpSocket, SocketAddr, Rtc), String> {
     Ok((sock, local, rtc))
 }
 
-fn host_thread(url: &str, ev: &Sender<LinkEvent>, out: Receiver<Vec<u8>>) -> Result<(), String> {
+/// One data channel's connection: its UDP socket and its Rtc.
+struct Conn {
+    peer: u32,
+    sock: UdpSocket,
+    local: SocketAddr,
+    rtc: Rtc,
+    cid: Option<ChannelId>,
+    open: bool,
+    pending: std::collections::VecDeque<Vec<u8>>,
+    start: Instant,
+    buf: Vec<u8>,
+}
+
+impl Conn {
+    fn new(peer: u32, (sock, local, rtc): (UdpSocket, SocketAddr, Rtc), cid: Option<ChannelId>) -> Result<Conn, String> {
+        sock.set_nonblocking(true).map_err(|e| e.to_string())?;
+        Ok(Conn { peer, sock, local, rtc, cid, open: false, pending: Default::default(), start: Instant::now(), buf: vec![0; 2000] })
+    }
+
+    /// Move the connection on: queued messages out, UDP in and out, events to the
+    /// game. Err when it closed.
+    fn poll(&mut self, ev: &Sender<LinkEvent>) -> Result<(), String> {
+        if self.open {
+            if let Some(mut ch) = self.cid.and_then(|c| self.rtc.channel(c)) {
+                while let Some(b) = self.pending.front() {
+                    match ch.write(true, b) {
+                        Ok(true) => {
+                            self.pending.pop_front();
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+        loop {
+            match self.rtc.poll_output().map_err(|e| e.to_string())? {
+                Output::Timeout(_) => break,
+                Output::Transmit(t) => {
+                    let _ = self.sock.send_to(&t.contents, t.destination);
+                }
+                Output::Event(e) => match e {
+                    Event::ChannelOpen(id, _) => {
+                        self.cid = Some(id);
+                        self.open = true;
+                        let _ = ev.send(LinkEvent::Connected(self.peer));
+                    }
+                    Event::ChannelData(d) => {
+                        let _ = ev.send(LinkEvent::Data(self.peer, d.data));
+                    }
+                    Event::ChannelClose(_) => return Err("The other player left.".into()),
+                    Event::IceConnectionStateChange(IceConnectionState::Disconnected) => return Err("Connection Lost!".into()),
+                    _ => {}
+                },
+            }
+        }
+        if !self.open && self.start.elapsed() > Duration::from_secs(20) {
+            return Err("Could not connect to the other computer (no direct route between the two networks).".into());
+        }
+        let mut got = false;
+        while let Ok((n, source)) = self.sock.recv_from(&mut self.buf) {
+            got = true;
+            if let Ok(contents) = self.buf[..n].try_into() {
+                let r = Receive { proto: Protocol::Udp, source, destination: self.local, contents };
+                self.rtc.handle_input(Input::Receive(Instant::now(), r)).map_err(|e| e.to_string())?;
+            }
+        }
+        if !got {
+            self.rtc.handle_input(Input::Timeout(Instant::now())).map_err(|e| e.to_string())?;
+        }
+        if !self.rtc.is_alive() {
+            return Err("Connection Lost!".into());
+        }
+        Ok(())
+    }
+}
+
+/// Queue the game's messages on their connections. False when the game dropped
+/// the link.
+fn take_outgoing(out: &Receiver<(u32, Vec<u8>)>, conns: &mut [Conn]) -> bool {
+    loop {
+        match out.try_recv() {
+            Ok((peer, b)) => {
+                if let Some(c) = conns.iter_mut().find(|c| c.peer == peer) {
+                    c.pending.push_back(b);
+                }
+            }
+            Err(TryRecvError::Empty) => return true,
+            Err(TryRecvError::Disconnected) => return false,
+        }
+    }
+}
+
+/// Poll every connection; drop the ones that closed, with a Closed event.
+fn poll_all(conns: &mut Vec<Conn>, ev: &Sender<LinkEvent>) {
+    conns.retain_mut(|c| match c.poll(ev) {
+        Ok(()) => true,
+        Err(e) => {
+            let _ = ev.send(LinkEvent::Closed(Some(c.peer), e));
+            false
+        }
+    });
+}
+
+fn host_thread(url: &str, ev: &Sender<LinkEvent>, out: Receiver<(u32, Vec<u8>)>) -> Result<(), String> {
     let mut ws = ws_connect(url)?;
     ws_send(&mut ws, serde_json::json!({"type": "host"}))?;
     let hosted = ws_wait(&mut ws, &["hosted"], Duration::from_secs(10))?;
     let code = hosted["code"].as_str().unwrap_or("").to_string();
     let _ = ev.send(LinkEvent::Code(code));
     let stun = stun_servers(&hosted["ice_servers"]);
-    // wait for a joiner's offer, keeping the room alive
+    ws_timeout(&mut ws, Duration::from_millis(1));
+    let mut conns: Vec<Conn> = Vec::new();
+    // the server's seat numbers are reused once a joiner has left the room (a
+    // joiner leaves it when its link is set up), so the joiners get their own
+    let mut next_peer = 1;
     let mut last_ping = Instant::now();
-    let offer = loop {
-        if let Some(m) = ws_recv(&mut ws)? {
+    // once a joiner is connected, losing the rendezvous server only means that no
+    // one else can join
+    let mut ws_alive = true;
+    loop {
+        // the joiners' offers, keeping the room alive
+        let got = if ws_alive { ws_recv(&mut ws) } else { Ok(None) };
+        let got = match got {
+            Ok(m) => m,
+            Err(e) if conns.is_empty() => return Err(e),
+            Err(_) => {
+                ws_alive = false;
+                None
+            }
+        };
+        if let Some(m) = got {
             match m["type"].as_str() {
-                Some("offer") => break m,
+                Some("offer") => {
+                    let seat = m["seat"].clone();
+                    let rtc = new_rtc(&stun)?;
+                    let mut c = Conn::new(next_peer, rtc, None)?;
+                    next_peer += 1;
+                    let sdp: SdpOffer = serde_json::from_value(m["offer"].clone()).map_err(|e| format!("bad offer: {}", e))?;
+                    let answer = c.rtc.sdp_api().accept_offer(sdp).map_err(|e| e.to_string())?;
+                    ws_send(&mut ws, serde_json::json!({"type": "answer", "seat": seat, "answer": answer}))?;
+                    conns.push(c);
+                }
                 Some("error") => return Err(m["message"].as_str().unwrap_or("rendezvous error").to_string()),
                 _ => {}
             }
         }
-        if last_ping.elapsed() > Duration::from_secs(25) {
+        if ws_alive && last_ping.elapsed() > Duration::from_secs(25) {
             let _ = ws.send(Message::Ping(Vec::new().into()));
             last_ping = Instant::now();
         }
-        // the game cancelled (the link was dropped)
-        if let Err(TryRecvError::Disconnected) = out.try_recv() {
+        if !take_outgoing(&out, &mut conns) {
+            // the game dropped the link: the room is not needed any more
             let _ = ws_send(&mut ws, serde_json::json!({"type": "close"}));
             return Ok(());
         }
-    };
-    let (sock, local, mut rtc) = new_rtc(&stun)?;
-    let sdp: SdpOffer = serde_json::from_value(offer["offer"].clone()).map_err(|e| format!("bad offer: {}", e))?;
-    let answer = rtc.sdp_api().accept_offer(sdp).map_err(|e| e.to_string())?;
-    let seat = offer["seat"].clone();
-    ws_send(&mut ws, serde_json::json!({"type": "answer", "seat": seat, "answer": answer}))?;
-    let r = run(sock, local, rtc, None, ev, out);
-    // the room is not needed any more
-    let _ = ws_send(&mut ws, serde_json::json!({"type": "close"}));
-    r
+        poll_all(&mut conns, ev);
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
-fn join_thread(url: &str, code: &str, ev: &Sender<LinkEvent>, out: Receiver<Vec<u8>>) -> Result<(), String> {
+fn join_thread(url: &str, code: &str, ev: &Sender<LinkEvent>, out: Receiver<(u32, Vec<u8>)>) -> Result<(), String> {
     let mut ws = ws_connect(url)?;
     // the ICE servers come with "joined", after the offer; ask for them first
     ws_send(&mut ws, serde_json::json!({"type": "ice"}))?;
@@ -288,75 +421,15 @@ fn join_thread(url: &str, code: &str, ev: &Sender<LinkEvent>, out: Receiver<Vec<
     let answer: SdpAnswer = serde_json::from_value(m["answer"].clone()).map_err(|e| format!("bad answer: {}", e))?;
     rtc.sdp_api().accept_answer(pending, answer).map_err(|e| e.to_string())?;
     drop(ws);
-    run(sock, local, rtc, Some(cid), ev, out)
-}
-
-/// Drive the Rtc until the link closes: UDP in and out, the channel's bytes to the
-/// game, the game's bytes to the channel.
-fn run(sock: UdpSocket, local: SocketAddr, mut rtc: Rtc, mut cid: Option<ChannelId>, ev: &Sender<LinkEvent>, out: Receiver<Vec<u8>>) -> Result<(), String> {
-    let mut buf = vec![0u8; 2000];
-    let mut open = false;
-    let mut pending: std::collections::VecDeque<Vec<u8>> = Default::default();
-    let start = Instant::now();
+    let mut conns = vec![Conn::new(0, (sock, local, rtc), Some(cid))?];
     loop {
-        // the game's bytes
-        loop {
-            match out.try_recv() {
-                Ok(b) => pending.push_back(b),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return Ok(()),
-            }
+        if !take_outgoing(&out, &mut conns) {
+            return Ok(());
         }
-        if open {
-            if let Some(mut ch) = cid.and_then(|c| rtc.channel(c)) {
-                while let Some(b) = pending.front() {
-                    match ch.write(true, b) {
-                        Ok(true) => {
-                            pending.pop_front();
-                        }
-                        _ => break,
-                    }
-                }
-            }
+        poll_all(&mut conns, ev);
+        if conns.is_empty() {
+            return Ok(());
         }
-        let deadline = loop {
-            match rtc.poll_output().map_err(|e| e.to_string())? {
-                Output::Timeout(t) => break t,
-                Output::Transmit(t) => {
-                    let _ = sock.send_to(&t.contents, t.destination);
-                }
-                Output::Event(e) => match e {
-                    Event::ChannelOpen(id, _) => {
-                        cid = Some(id);
-                        open = true;
-                        let _ = ev.send(LinkEvent::Connected);
-                    }
-                    Event::ChannelData(d) => {
-                        let _ = ev.send(LinkEvent::Data(d.data));
-                    }
-                    Event::ChannelClose(_) => return Err("The other player left.".into()),
-                    Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
-                        return Err("Connection Lost!".into())
-                    }
-                    _ => {}
-                },
-            }
-        };
-        if !open && start.elapsed() > Duration::from_secs(20) {
-            return Err("Could not connect to the other computer (no direct route between the two networks).".into());
-        }
-        let wait = deadline.saturating_duration_since(Instant::now()).clamp(Duration::from_millis(1), Duration::from_millis(5));
-        let _ = sock.set_read_timeout(Some(wait));
-        let input = match sock.recv_from(&mut buf) {
-            Ok((n, source)) => match buf[..n].try_into() {
-                Ok(contents) => Input::Receive(Instant::now(), Receive { proto: Protocol::Udp, source, destination: local, contents }),
-                Err(_) => Input::Timeout(Instant::now()),
-            },
-            Err(_) => Input::Timeout(Instant::now()),
-        };
-        rtc.handle_input(input).map_err(|e| e.to_string())?;
-        if !rtc.is_alive() {
-            return Err("Connection Lost!".into());
-        }
+        std::thread::sleep(Duration::from_millis(1));
     }
 }

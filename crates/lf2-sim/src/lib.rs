@@ -27,6 +27,7 @@ pub mod post_loop;
 pub mod summary;
 pub mod post_update;
 pub mod replay;
+pub mod rollback;
 pub mod setup;
 pub mod stage;
 pub mod sound;

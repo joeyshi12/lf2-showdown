@@ -1,7 +1,5 @@
-//! The network game on the desktop: a WebRTC link (rtc.rs) carrying the byte stream
-//! of lf2_sim::net::NetSession. The original blocks inside a frame while it waits
-//! for the other computer; here the main loop stops stepping the world instead and
-//! keeps the window alive.
+//! The network game on the desktop: WebRTC links (rtc.rs) carrying the messages of
+//! lf2_sim::net::NetSession.
 
 use crate::rtc::{rendezvous_url, Link, LinkEvent};
 use lf2_sim::net::NetSession;
@@ -29,61 +27,83 @@ impl Net {
         self.link = None;
     }
 
+    /// MenuRequest::NetStart: the host starts the game.
+    pub fn start(&mut self, world: &mut World) {
+        if let Some((_, s)) = self.link.as_mut() {
+            s.start(world);
+        }
+        self.flush();
+    }
+
     /// A message for the player since the last call (a failed connection).
     pub fn take_error(&mut self) -> Option<String> {
         self.error.take()
     }
 
-    /// Pass the link's events to the session and its bytes to the link.
-    fn pump(&mut self, world: &mut World) -> Option<&mut NetSession> {
-        let (link, s) = self.link.as_mut()?;
+    /// True while the game runs over the network: call `advance` instead of
+    /// `World::step`.
+    pub fn in_game(&self) -> bool {
+        self.link.as_ref().is_some_and(|(_, s)| s.in_game())
+    }
+
+    pub fn session(&self) -> Option<&NetSession> {
+        self.link.as_ref().map(|(_, s)| s)
+    }
+
+    /// Pass the links' events to the session and its messages to the links. Call
+    /// once per frame.
+    pub fn pump(&mut self, world: &mut World) {
+        let Some((link, s)) = self.link.as_mut() else { return };
         while let Some(e) = link.poll() {
             match e {
                 LinkEvent::Code(c) => s.on_code(world, &c),
-                LinkEvent::Connected => s.on_connected(),
-                LinkEvent::Data(d) => s.on_data(&d),
-                LinkEvent::Closed(msg) => {
-                    s.on_closed(world, &msg);
-                    break;
+                LinkEvent::Connected(p) => s.on_connected(world, p),
+                LinkEvent::Data(p, d) => s.on_message(world, p, &d),
+                LinkEvent::Closed(p, msg) => {
+                    // all links: the host lost the rendezvous server, or a joiner
+                    // its only link
+                    s.on_closed(world, p.unwrap_or(0), &msg);
+                    if p.is_none() && s.is_host() && !s.in_game() {
+                        self.error = Some(msg);
+                        world.net_connect_failed();
+                    }
+                    if p.is_none() || !s.is_host() {
+                        break;
+                    }
                 }
             }
         }
         if let Some(e) = s.error.take() {
             self.error = Some(e);
         }
-        Some(s)
+        self.flush();
     }
 
     fn flush(&mut self) {
         if let Some((link, s)) = self.link.as_mut() {
-            for b in s.take_outgoing() {
-                link.send(&b);
+            for (peer, b) in s.take_outgoing() {
+                link.send(peer, &b);
             }
         }
     }
 
-    /// Between frames, before the game runs: move the handshake on. True while the
-    /// world must not run.
-    pub fn handshake_busy(&mut self, world: &mut World) -> bool {
-        let busy = self.pump(world).map(|s| s.handshake_busy(world)).unwrap_or(false);
-        self.flush();
-        busy
-    }
-
-    /// Call when `World::step` stopped at the exchange: send this computer's packet.
-    pub fn begin_exchange(&mut self, world: &mut World) {
+    /// Send the inputs again and run the frames whose guesses were wrong, without
+    /// new frames (for tests that stop at a frame).
+    pub fn settle(&mut self, world: &mut World) {
         if let Some((_, s)) = self.link.as_mut() {
-            s.begin_exchange(world);
+            s.settle(world);
         }
         self.flush();
     }
 
-    /// The other computer's packet: Some(Some(packet)) when it has come, Some(None)
-    /// when the connection closed, None while waiting.
-    pub fn poll_exchange(&mut self, world: &mut World) -> Option<Option<Vec<u8>>> {
-        match self.pump(world) {
-            Some(s) => s.poll_exchange(),
-            None => Some(None),
-        }
+    /// One frame of the game over the network (NetSession::advance): the number
+    /// of new frames.
+    pub fn advance(&mut self, world: &mut World, keys: &mut [u8; 256]) -> u32 {
+        let n = match self.link.as_mut() {
+            Some((_, s)) => s.advance(world, keys),
+            None => 0,
+        };
+        self.flush();
+        n
     }
 }

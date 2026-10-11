@@ -1,15 +1,17 @@
-// A network game between the web build in headless Chromium and the desktop
-// program (examples/net_peer) through the rendezvous server. The browser hosts
-// (clicks "network game", "server") or joins (types the code net_peer printed);
-// then the digests of the objects after each packet exchange, from both sides,
-// must be the same. With PRESS=1 the browser joins and taps attack (j) every 450 ms
-// during the game; the desktop side reports how many exchanges brought it.
-// usage: node tools/web/net_check.mjs URL host|join EXCHANGES
+// A network game between the web build in headless Chromium and desktop programs
+// (examples/net_peer) through the rendezvous server. The browser hosts (clicks
+// "network game", "server", and presses Enter once everyone is in) or joins (types
+// the room code a net_peer host printed). The other computers are net_peer
+// processes; the first desktop computer goes through the menus into a VS match.
+// The state hashes every computer reports must be the same.
+// With PRESS=1 the browser's player taps attack every 450 ms during the game.
+// usage: node tools/web/net_check.mjs URL host|join [COMPUTERS] [FRAMES]
 // (URL e.g. http://127.0.0.1:8080/; needs chromium, LF2_DIR and a built net_peer)
 import { spawn } from "child_process";
 import readline from "readline";
-const [url, role, nArg] = process.argv.slice(2);
-const N = +nArg || 200;
+const [url, role, nArg, fArg] = process.argv.slice(2);
+const N = +nArg || 2;
+const FRAMES = +fArg || 900;
 const port = 9334;
 const chrome = spawn("chromium", ["--headless=new", "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${port}`,
   "--window-size=900,700", "about:blank"], { stdio: "ignore" });
@@ -47,65 +49,69 @@ const click = async (x, y) => {
   }
   await sleep(500);
 };
-const key = async (code, k, vk) => {
+const key = async (code, k, vk, hold = 120) => {
   await send("Input.dispatchKeyEvent", { type: "keyDown", code, key: k, windowsVirtualKeyCode: vk });
-  await sleep(120);
+  await sleep(hold);
   await send("Input.dispatchKeyEvent", { type: "keyUp", code, key: k, windowsVirtualKeyCode: vk });
   await sleep(200);
 };
+const peers = [];
+const lines = [];
+const startPeer = (args, env) => {
+  const k = peers.length;
+  const p = spawn(process.cwd() + "/target/release/examples/net_peer", args, { env: { ...process.env, FRAMES: String(FRAMES), ...env } });
+  p.stderr.on("data", (d) => process.stderr.write(`peer ${k}: ` + d));
+  lines[k] = [];
+  const st = { proc: p, code: null, done: null };
+  readline.createInterface({ input: p.stdout }).on("line", (l) => {
+    if (l.startsWith("code ")) st.code = l.slice(5);
+    else if (l.startsWith("hash ")) lines[k].push(l.slice(5));
+    else if (l.startsWith("done")) st.done = l;
+  });
+  peers.push(st);
+  return st;
+};
 await click(0x150, 0x100);                 // network game
-const peerArgs = [];
 if (role === "host") {
   await click(0x150, 0x118);               // server
   let code;
   for (let i = 0; i < 50 && !code; i++) { code = await evalJs(`window.lf2Net.code`); await sleep(200); }
   console.log("browser hosts room", code);
-  peerArgs.push("join", code);
+  for (let k = 1; k < N; k++) { startPeer(["join", code], { DRIVER: "1" }); await sleep(1500); }
+  for (let i = 0; i < 150 && (await evalJs(`window.lf2Game().net_players()`)) < N; i++) await sleep(200);
+  await key("Enter", "Enter", 0x0d);
 } else {
-  peerArgs.push("host");
-}
-const peer = spawn(process.cwd() + "/target/release/examples/net_peer", peerArgs, { env: { ...process.env, EXCHANGES: String(N) } });
-peer.stderr.on("data", (d) => process.stderr.write("peer: " + d));
-const peerLines = [];
-const rl = readline.createInterface({ input: peer.stdout });
-let peerCode = null;
-let remoteAttacks = null;
-rl.on("line", (l) => {
-  if (l.startsWith("code ")) peerCode = l.slice(5);
-  else if (l.includes("digest")) peerLines.push(l);
-  else if (l.startsWith("remote attack exchanges: ")) remoteAttacks = +l.slice(25);
-});
-if (role === "join") {
-  for (let i = 0; i < 100 && !peerCode; i++) await sleep(100);
-  console.log("desktop hosts room", peerCode);
+  const host = startPeer(["host", String(N)], {});
+  for (let i = 0; i < 100 && !host.code; i++) await sleep(100);
+  console.log("desktop hosts room", host.code);
+  for (let k = 2; k < N; k++) { startPeer(["join", host.code], {}); await sleep(1500); }
   await click(0x150, 0x138);               // client
-  for (const c of peerCode) await key(/[0-9]/.test(c) ? "Digit" + c : "Key" + c, c.toLowerCase(), c.charCodeAt(0));
+  for (const c of host.code) await key(/[0-9]/.test(c) ? "Digit" + c : "Key" + c, c.toLowerCase(), c.charCodeAt(0));
   await key("Enter", "Enter", 0x0d);
 }
 const t0 = Date.now();
 let taps = 0;
-while (peerLines.length < N && Date.now() - t0 < 90000) {
-  if (process.env.PRESS && peerLines.length > 0) {
-    await send("Input.dispatchKeyEvent", { type: "keyDown", code: "KeyJ", key: "j", windowsVirtualKeyCode: 0x4a });
-    await sleep(150);
-    await send("Input.dispatchKeyEvent", { type: "keyUp", code: "KeyJ", key: "j", windowsVirtualKeyCode: 0x4a });
-    taps++;
-    await sleep(300);
-  } else await sleep(500);
+while (peers.some((p) => !p.done) && Date.now() - t0 < 100000) {
+  if (process.env.PRESS && lines[0].length > 3) { await key("KeyJ", "j", 0x4a, 150); taps++; await sleep(100); }
+  else await sleep(500);
 }
-for (let i = 0; i < 40 && remoteAttacks === null; i++) await sleep(100);
-await sleep(1000);
-const browserLines = (await evalJs(`window.lf2Game().net_log()`) || "").split("\n").filter((l) => l);
-let same = 0, firstDiff = -1;
-for (let i = 0; i < Math.min(browserLines.length, peerLines.length); i++) {
-  if (browserLines[i] === peerLines[i]) same++; else if (firstDiff < 0) firstDiff = i;
+await sleep(500);
+const browser = ((await evalJs(`window.lf2Game().net_log()`)) || "").split("\n").filter((l) => l);
+let ok = true;
+for (let k = 0; k < peers.length; k++) {
+  const d = lines[k];
+  let same = 0, first = -1;
+  for (let i = 0; i < Math.min(d.length, browser.length); i++) {
+    if (d[i] === browser[i]) same++; else if (first < 0) first = i;
+  }
+  console.log(`desktop ${k}: ${d.length} hashes, browser ${browser.length}; identical ${same}` +
+    (first >= 0 ? `; first difference at ${first}: ${d[first]} | ${browser[first]}` : "") + `; ${peers[k].done || "not done"}`);
+  if (first >= 0 || same < d.length - 2 || d.length < FRAMES / 16 - 2) ok = false;
 }
-console.log(`exchanges: browser ${browserLines.length}, desktop ${peerLines.length}; identical ${same}` +
-  (firstDiff >= 0 ? `; first difference at ${firstDiff}: ${browserLines[firstDiff]} | ${peerLines[firstDiff]}` : ""));
-console.log("last:", peerLines[peerLines.length - 1]);
-if (process.env.PRESS) console.log(`browser taps of attack: ${taps}; exchanges with the browser's attack at the desktop: ${remoteAttacks}`);
+console.log("browser: frames, rollbacks, frames run again, waits:", await evalJs(`window.lf2Game().net_stats()`));
+if (process.env.PRESS) console.log(`browser taps of attack: ${taps}`);
 console.log(errors.length ? "page errors:\n" + errors.join("\n") : "no page errors");
-peer.kill();
+for (const p of peers) p.proc.kill();
 ws.close();
 chrome.kill();
-process.exit(firstDiff < 0 && same >= N - 1 ? 0 : 1);
+process.exit(ok && !errors.length ? 0 : 1);

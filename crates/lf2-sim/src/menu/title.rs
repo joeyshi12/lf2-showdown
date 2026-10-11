@@ -769,9 +769,15 @@ impl World {
             self.tw(0x4511d4, (self.t(0x4511d4) + 1) % 0xe);
             self.tw(0x4511d8, self.time_ms as i32);
         }
-        if self.g.m.u8(crate::net::JOINED) == 1 {
-            self.tw(crate::world::GAME, 1);
+        // the computers in the room; Enter starts the game once another one is in
+        let enter = KEYS + 0xd;
+        if self.net_players.len() >= 2 && self.g.m.u8(enter) == b'd' {
+            self.g.m.set_u8(enter, b'u');
+            self.buffer_sounds.push("data\\m_ok.wav");
+            self.requests.push(MenuRequest::NetStart);
         }
+        let hint: &[u8] = if self.net_players.len() >= 2 { b"Press Enter to start" } else { b"Waiting for players..." };
+        self.net_player_list(hint);
         let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
         if 0x141 < mx && mx < 0x1d9 && 0x168 < my && my < 0x183 {
             self.blit(MENU_CLIP, 0x142, 0x169, 0xc, true);
@@ -779,6 +785,7 @@ impl World {
                 self.buffer_sounds.push("data\\m_cancel.wav");
                 self.tw(SCREEN, 1);
                 crate::net::set_room_code(self, "");
+                self.net_players.clear();
                 self.requests.push(MenuRequest::NetClose);
             }
         }
@@ -850,14 +857,26 @@ impl World {
             self.tw(0x4511b0, 1);
             self.blit(MENU_CLIP, 0xec, 0x122, 0xb, true);
         } else if self.t(0x4511b0) == 1 {
-            // the original connects here, inside the frame; the platform does it and
-            // gives the result to net_client_joined or net_connect_failed
+            // the original connects here, inside the frame; the platform does it
+            // while state 4 waits for the host to start
             self.tw(0x4511b0, 0);
+            self.tw(SCREEN, 4);
             self.requests.push(MenuRequest::NetConnect);
         }
     }
 
-    /// State 4: connected; the game starts (0x4286xx).
+    /// Below the network screen's box: the computers in the room, then `hint`.
+    fn net_player_list(&mut self, hint: &[u8]) {
+        let n = self.net_players.len() as i32;
+        self.fill(0xe4, 0x18a, 0x156, 0x1c + 0x10 * n, 0x122565);
+        for (k, name) in self.net_players.clone().iter().enumerate() {
+            let line = if k == 0 { format!("{} (host)", name) } else { name.clone() };
+            self.text(line.as_bytes(), 0x652512, 0xffffff, 0xf4, 0x190 + 0x10 * k as i32);
+        }
+        self.text(hint, 0x652512, 0xd8775a, 0xf4, 0x192 + 0x10 * n);
+    }
+
+    /// State 4: connecting, then waiting for the host to start (0x4286xx).
     fn title_net_connected(&mut self) {
         let flags = self.t(0x4511f0);
         if flags & 4 == 0 {
@@ -875,12 +894,15 @@ impl World {
             self.blit(MENU_CLIP, 0x142, 0x169, 0xc, true);
             if self.clicked() {
                 self.tw(SCREEN, 1);
+                self.net_players.clear();
                 self.requests.push(MenuRequest::NetClose);
             }
         }
         for i in 0..self.t(0x4511cc) {
             self.fill(0x119 + 0x14 * i, 0x156, 5, 0xc, 0x577fd7);
         }
-        self.tw(crate::world::GAME, 1);
+        if !self.net_players.is_empty() {
+            self.net_player_list(b"Waiting for the host to start");
+        }
     }
 }
