@@ -1,12 +1,13 @@
-//! One side of a network game without a window, for testing the WebRTC play between
-//! two processes (or computers): `net_peer host` hosts a room and prints its code,
-//! `net_peer join CODE` joins it. Both go through the title screens as a player would,
-//! then into a VS match from a fixed key script (each side's player 1 joins, Fight!,
-//! a fight), and print a digest of every object's position and hp at each packet
-//! exchange, so the two outputs can be compared line by line. At the end it prints
-//! how many exchanges brought an attack key from the other computer's player 1.
-//! usage: net_peer host | join CODE   (needs LF2_DIR; LF2_RENDEZVOUS for another server,
-//! EXCHANGES for the number of exchanges, DELAY_MS to hold each packet back)
+//! One computer of a network game without a window, for testing the WebRTC play
+//! between processes (or computers). `net_peer host N` hosts a room, prints its
+//! code and starts the game once N computers are in it (itself included);
+//! `net_peer join CODE` joins one. All go through the title screens as a player
+//! would, then into a VS match from a fixed key script, and print the state hash
+//! every rollback::HASH_EVERY frames ("hash FRAME HASH"), so the outputs of the
+//! computers can be compared line by line.
+//! usage: net_peer host [N] | join CODE   (needs LF2_DIR; LF2_RENDEZVOUS for another
+//! server, FRAMES for the number of frames, DRIVER for the seat that goes through
+//! the menus, 0 by default)
 use lf2_sim::menu::main_menu::{MenuRequest, MENU_Y, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
 use lf2_sim::World;
 use std::sync::Arc;
@@ -15,43 +16,64 @@ use std::time::{Duration, Instant};
 const J: usize = 0x4a;
 const W: usize = 0x57;
 const A: usize = 0x41;
+const S: usize = 0x53;
 const D: usize = 0x44;
 
-/// The keys held from exchange `n` on (one exchange is two frames).
-fn script(host: bool, n: u32) -> Vec<usize> {
-    let mut taps: Vec<(u32, bool, usize)> = vec![(12, true, J)];
-    let mut t = 20;
-    for _ in 0..4 {
-        taps.push((t, true, J));
-        taps.push((t, false, J));
-        t += 5;
+/// The keys held at frame `t` of the game (the script of tests/network.rs, by
+/// frames run instead of frames of the clock). The
+/// computer in seat `driver` goes through the menus.
+fn script(seat: usize, driver: usize, t: u32, w: &World) -> Vec<usize> {
+    let mut down = Vec::new();
+    let tap = |at: u32| (at..at + 4).contains(&t);
+    if seat == driver && tap(40) {
+        down.push(J);
     }
-    t += 135;
-    taps.push((t, true, J));
-    taps.push((t + 6, false, W));
-    taps.push((t + 11, false, W));
-    taps.push((t + 16, true, J));
-    let fight = t + 70;
-    let mut keys: Vec<usize> = taps.iter().filter(|&&(at, h, _)| h == host && at <= n && n < at + 2).map(|x| x.2).collect();
-    if n >= fight {
-        let m = n - fight;
-        if m % (if host { 4 } else { 5 }) == 0 {
-            keys.push(J);
+    for k in 0..4 {
+        if tap(80 + 16 * k + 2 * seat as u32) {
+            down.push(J);
         }
     }
-    keys
+    let menu = 80 + 64 + 200;
+    if seat == driver {
+        for (k, key) in [J, W, W, J].iter().enumerate() {
+            if tap(menu + 16 * k as u32) {
+                down.push(*key);
+            }
+        }
+    }
+    if t > menu + 120 && w.g.match_phase() == 0 && w.exists(seat) {
+        let others: Vec<usize> = (0..4).filter(|&s| s != seat && w.exists(s) && w.objs[s].hp() > 0).collect();
+        if let Some(&o) = others.iter().min_by_key(|&&o| (w.objs[o].ix() - w.objs[seat].ix()).abs()) {
+            let (dx, dz) = (w.objs[o].ix() - w.objs[seat].ix(), w.objs[o].iz() - w.objs[seat].iz());
+            if dx > 50 {
+                down.push(D);
+            } else if dx < -50 {
+                down.push(A);
+            }
+            if dz > 6 {
+                down.push(S);
+            } else if dz < -6 {
+                down.push(W);
+            }
+        }
+        if t % (5 + seat as u32) < 2 {
+            down.push(J);
+        }
+    }
+    down
 }
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let host = a.get(1).map(|s| s == "host").unwrap_or(true);
-    let delay_ms: u64 = std::env::var("DELAY_MS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let exchanges: u32 = std::env::var("EXCHANGES").ok().and_then(|s| s.parse().ok()).unwrap_or(400);
+    let want: usize = if host { a.get(2).and_then(|s| s.parse().ok()).unwrap_or(2) } else { 0 };
+    let frames: u32 = std::env::var("FRAMES").ok().and_then(|s| s.parse().ok()).unwrap_or(900);
+    let driver: usize = std::env::var("DRIVER").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let dir = lf2_data::game_dir_from_env().expect("set LF2_DIR");
     let exe = lf2_app::exe_image::built_in().map(|i| i.to_vec()).unwrap_or_else(|| lf2_data::read_exe(&dir).unwrap());
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let controls = lf2_data::controls::load(&dir).unwrap_or_default();
-    let mut w = World::new_title(gd, &exe, &controls, None, if host { 1 } else { 2 });
+    let mut w = World::new_title(gd, &exe, &controls, None, std::process::id());
     w.ads_removed = true;
     let mut net = lf2_app::net::Net::default();
     let mut keys = [b'u'; 256];
@@ -62,7 +84,11 @@ fn main() {
                 MenuRequest::NetHost => net.host(),
                 MenuRequest::NetConnect => net.connect(w),
                 MenuRequest::NetClose => net.close(),
-                MenuRequest::Message(m) => eprintln!("message: {}", m),
+                MenuRequest::NetStart => net.start(w),
+                MenuRequest::Message(m) => {
+                    eprintln!("message: {}", m);
+                    std::process::exit(1)
+                }
                 MenuRequest::Quit => {
                     eprintln!("quit");
                     std::process::exit(1)
@@ -71,49 +97,41 @@ fn main() {
             }
         }
     };
-    let step = |w: &mut World, keys: &[u8; 256]| {
-        w.time_ms = start.elapsed().as_millis() as u32;
-        w.set_keys(keys);
-        w.step();
-    };
-    let click = |w: &mut World, net: &mut lf2_app::net::Net, keys: &[u8; 256], x: i32, y: i32| {
+    let click = |w: &mut World, net: &mut lf2_app::net::Net, x: i32, y: i32| {
         for c in [0, 1, 0] {
             w.g.m.set_i32(MOUSE_X, x);
             w.g.m.set_i32(MOUSE_Y, y);
             w.g.m.set_i32(MOUSE_CLICK, c);
-            step(w, keys);
+            w.step();
             handle(w, net);
         }
     };
     for _ in 0..5 {
-        step(&mut w, &keys);
+        w.step();
     }
     let y0 = w.g.m.i32(MENU_Y);
-    click(&mut w, &mut net, &keys, 0x150, y0 + 0x100);
+    click(&mut w, &mut net, 0x150, y0 + 0x100);
     if host {
-        click(&mut w, &mut net, &keys, 0x150, 0x118);
+        click(&mut w, &mut net, 0x150, 0x118);
     } else {
-        click(&mut w, &mut net, &keys, 0x150, 0x138);
+        click(&mut w, &mut net, 0x150, 0x138);
         let code = a.get(2).expect("join CODE");
-        for (k, b) in code.bytes().enumerate() {
-            w.g.m.set_u8(lf2_sim::net::SERVER_IP + k as u32, b);
-        }
-        w.g.m.set_u8(lf2_sim::net::SERVER_IP + code.len() as u32, 0);
+        lf2_sim::menu::title::paste_room_code(&mut w, code);
         keys[0x0d] = b'd';
-        step(&mut w, &keys);
+        w.set_keys(&keys);
+        w.step();
         keys[0x0d] = b'u';
-        handle(&mut w, &mut net);
-        step(&mut w, &keys);
         handle(&mut w, &mut net);
     }
     let mut shown_code = false;
-    let mut n = 0u32;
-    let mut remote_attacks = 0u32;
-    while n < exchanges {
-        if start.elapsed() > Duration::from_secs(120) {
-            eprintln!("timed out at exchange {}", n);
+    let mut logged = 0;
+    let mut next = Instant::now();
+    loop {
+        if start.elapsed() > Duration::from_secs(150) {
+            eprintln!("timed out");
             std::process::exit(1);
         }
+        net.pump(&mut w);
         if let Some(e) = net.take_error() {
             eprintln!("error: {}", e);
             std::process::exit(1);
@@ -123,70 +141,46 @@ fn main() {
             println!("code {}", String::from_utf8_lossy(&code));
             shown_code = true;
         }
-        if w.net_waiting {
-            match net.poll_exchange(&mut w) {
-                Some(p) => {
-                    w.net_resume(p.as_deref());
-                    // the other computer's player 1: slot 4 on the joiner, 0 on the host
-                    let slot = if host { 4 } else { 0 };
-                    if w.g.m.u8(lf2_sim::net::IN + slot) & 8 != 0 {
-                        remote_attacks += 1;
-                    }
-                    handle(&mut w, &mut net);
-                    // the digest after the exchange frame
-                    let mut h: u64 = 0;
-                    for i in 0..400 {
-                        if w.exists(i) {
-                            let o = &w.objs[i];
-                            for v in [o.x().to_bits(), o.y().to_bits(), o.z().to_bits(), o.hp() as u64, o.frame() as u64] {
-                                h = h.wrapping_mul(1_000_003).wrapping_add(v ^ i as u64);
-                            }
-                        }
-                    }
-                    println!("{} phase {} digest {:016x}", n, w.g.match_phase(), h);
-                    n += 1;
-                    keys = [b'u'; 256];
-                    for k in script(host, n) {
-                        keys[k] = b'd';
-                    }
-                    // in the match: walk to the other player (own player 1 is object 0
-                    // on the host, 4 on the joiner)
-                    if w.g.match_phase() == 0 && w.exists(0) && w.exists(4) {
-                        let (me, them) = if host { (0, 4) } else { (4, 0) };
-                        let (dx, dz) = (w.objs[them].ix() - w.objs[me].ix(), w.objs[them].iz() - w.objs[me].iz());
-                        if dx > 50 {
-                            keys[D] = b'd';
-                        } else if dx < -50 {
-                            keys[A] = b'd';
-                        }
-                        if dz > 6 {
-                            keys[0x53] = b'd';
-                        } else if dz < -6 {
-                            keys[W] = b'd';
-                        }
-                    }
+        if net.in_game() {
+            let s = net.session().unwrap();
+            let rb = s.rollback().unwrap();
+            let (seat, frame) = (rb.me(), rb.frame());
+            keys = [b'u'; 256];
+            if frame < frames {
+                for k in script(seat, driver, frame, &w) {
+                    keys[k] = b'd';
                 }
-                None => std::thread::sleep(Duration::from_millis(1)),
+                net.advance(&mut w, &mut keys);
+            } else if s.rollback().unwrap().confirmed() >= frames {
+                break;
+            } else {
+                net.settle(&mut w);
             }
-            continue;
+        } else {
+            // the host presses Enter once everyone is in
+            keys[0x0d] = if host && w.net_players.len() >= want { b'd' } else { b'u' };
+            w.set_keys(&keys);
+            w.step();
         }
-        if net.handshake_busy(&mut w) {
-            std::thread::sleep(Duration::from_millis(2));
-            continue;
-        }
-        step(&mut w, &keys);
         handle(&mut w, &mut net);
-        if w.net_waiting {
-            // DELAY_MS holds each packet back, as a slow connection would
-            std::thread::sleep(Duration::from_millis(delay_ms));
-            net.begin_exchange(&mut w);
-        } else if w.g.m.i32(lf2_sim::world::GAME) == 0 {
-            std::thread::sleep(Duration::from_millis(10));
+        if let Some(s) = net.session() {
+            for (f, h) in &s.log[logged..] {
+                println!("hash {} {:016x}", f, h);
+            }
+            logged = s.log.len();
+        }
+        next += Duration::from_millis(33);
+        if let Some(d) = next.checked_duration_since(Instant::now()) {
+            std::thread::sleep(d);
         }
     }
-    let hurt = (0..8).filter(|&i| w.exists(i) && w.objs[i].hp() < w.objs[i].max_hp()).count();
-    println!("done: {} fighters hurt", hurt);
-    println!("remote attack exchanges: {}", remote_attacks);
-    // let the other side finish its last exchange
-    std::thread::sleep(Duration::from_secs(2));
+    let rb = net.session().unwrap().rollback().unwrap();
+    let hurt = (0..rb.seats()).filter(|&i| w.exists(i) && w.objs[i].hp() < w.objs[i].max_hp()).count();
+    println!("done: {} fighters hurt; {} rollbacks, {} frames run again, {} waits", hurt, rb.rollbacks, rb.resimulated, rb.stalls);
+    // let the others finish
+    for _ in 0..240 {
+        net.pump(&mut w);
+        net.settle(&mut w);
+        std::thread::sleep(Duration::from_millis(33));
+    }
 }

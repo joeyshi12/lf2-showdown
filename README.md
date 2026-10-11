@@ -16,16 +16,20 @@ the programs at it with `LF2_DIR=$PWD/game`.
 - Music: `game/bgm/` has the music as Ogg. For another copy of the game, run
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.
-- Network game: on the title screen choose "network game". The host picks "Waiting
-  for Opponent" and gets a room code; the other player picks "Connect to Opponent"
-  and types it. Desktop and
-  browser can play each other. The connection is peer to peer (WebRTC) and is set up
+- Network game: up to four computers, one player each. On the title screen choose
+  "network game". The host picks "Waiting for Opponent" and gets a room code; the
+  others pick "Connect to Opponent" and type it. The host presses Enter to start
+  once everyone is listed. Desktop and browser can play each other. Each computer
+  runs ahead with its own input and corrects the game when another computer's
+  input arrives late (rollback), so a slow connection does not slow the game down.
+  The connections are peer to peer (WebRTC), each joiner to the host, and are set up
   through `wss://rv.lf2-showdown.online/ws?app=lf2-showdown` (change it with
   `LF2_RENDEZVOUS` on the desktop or `?rendezvous=` on the web page).
 
 Differences from the original: no ads, no forum link, a smoother 60 pictures a second
-(`--fps 30` for the original's 30), and the network game uses room codes instead of
-IP addresses, so it cannot play against the original program.
+(`--fps 30` for the original's 30), and the network game takes up to four computers
+with rollback and room codes instead of two with lockstep and IP addresses, so it
+cannot play against the original program.
 
 ## Build
 

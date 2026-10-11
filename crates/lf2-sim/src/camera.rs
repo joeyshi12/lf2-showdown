@@ -84,11 +84,14 @@ impl World {
             }
         }
 
-        // camera target: the players' average, a little ahead of where they face
+        // camera target: the players' average, a little ahead of where they face. In a
+        // network game the original follows only the local players; here it follows
+        // every computer's player (slots -1), so all computers show the same.
         let mut sum = 0i32;
         let mut n = 0i32;
         for s in 0..8usize {
-            if self.exists(s) && self.g.m.i32(PLAYER_OF_SLOT + 4 * s as u32) > 0 && self.objs[s].hp() > 0 {
+            let p = self.g.m.i32(PLAYER_OF_SLOT + 4 * s as u32);
+            if self.exists(s) && (p > 0 || p == -1) && self.objs[s].hp() > 0 {
                 let o = &self.objs[s];
                 if self.state(s) == 0xe {
                     sum += o.ix();

@@ -30,11 +30,11 @@ pub struct World {
     /// ad banners themselves are not drawn when no ads are loaded (`new_title` with
     /// `ads` None).
     pub ads_removed: bool,
-    /// Network game: the packet to send, set when `step` stopped at the exchange
-    /// (see `net.rs`); the platform takes it, sends it and calls `net_resume`.
-    pub net_out: Option<[u8; crate::net::PACKET]>,
-    /// True while a frame waits for the other computer's packet.
-    pub net_waiting: bool,
+    /// Network game: the packet the next frame that reads keys takes as the one
+    /// received (see `rollback.rs`, which fills it with every computer's inputs).
+    pub net_in: [u8; crate::net::PACKET],
+    /// Network game: the names of the computers in the room, for the waiting screens.
+    pub net_players: Vec<String>,
     /// The platform's local time (year, month, day, hour, minute, second), for the
     /// names of recordings (GetLocalTime).
     pub local_time: [u16; 6],
@@ -79,8 +79,8 @@ impl World {
             control_txt: gd.control_txt.clone(),
             local_time: [0; 6],
             ads_removed: false,
-            net_out: None,
-            net_waiting: false,
+            net_in: [0; crate::net::PACKET],
+            net_players: Vec::new(),
             gd,
             unported_hits: Vec::new(),
             sounds: Vec::new(),

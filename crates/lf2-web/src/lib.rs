@@ -28,17 +28,13 @@ pub struct Game {
     exe: Vec<u8>,
     mouse_was_down: bool,
     keys: [u8; 256],
-    /// Key events (virtual-key code, down) not given to the world yet. While a
-    /// network game waits for the other computer they are kept for the next frame,
-    /// as the desktop program does.
+    /// Key events (virtual-key code, down) since the last frame, given to the key
+    /// array at the start of the next one.
     events: Vec<(u8, bool)>,
     /// The last tick kept for pictures between ticks (see `render::Tween`).
     tween: render::Tween,
-    /// The network game's byte stream; the page carries it over WebRTC.
+    /// The network game; the page carries its messages over WebRTC.
     net: Option<lf2_sim::net::NetSession>,
-    /// The tick waiting for the other computer's packet was a smooth one.
-    net_smooth: bool,
-    net_log: Vec<String>,
 }
 
 impl Game {
@@ -80,30 +76,16 @@ impl Game {
             events: Vec::new(),
             tween: render::Tween::new(),
             net: None,
-            net_smooth: false,
-            net_log: Vec::new(),
         })
     }
 
     /// Run one tick. With `smooth`, the tick is kept for `draw_smooth` and nothing is
     /// drawn; without it the tick's picture is drawn for `picture`. `time_ms` is the
     /// time since start, `local_time` year, month, day, hour, minute, second. Returns
-    /// the frame period in milliseconds (33, or 3 in fast mode), or 0 when no tick
-    /// ran because a network game waits for the other computer: call again later.
+    /// the frame period in milliseconds (33, or 3 in fast mode). In a network game
+    /// the frame may run no tick, or two (see `NetSession::advance`).
     pub fn step(&mut self, smooth: bool, mouse_x: i32, mouse_y: i32, mouse_down: bool, time_ms: u32, local_time: &[u16]) -> u32 {
         use lf2_sim::menu::main_menu::{MOUSE_CLICK, MOUSE_X, MOUSE_Y};
-        // a tick waiting for the other computer's packet
-        if self.world.net_waiting {
-            let Some(p) = self.net.as_mut().and_then(|n| n.poll_exchange()) else { return 0 };
-            self.world.net_resume(p.as_deref());
-            self.log_exchange();
-            return self.finish(self.net_smooth);
-        }
-        if let Some(n) = self.net.as_mut() {
-            if n.handshake_busy(&mut self.world) {
-                return 0;
-            }
-        }
         let w = &mut self.world;
         w.g.m.set_i32(MOUSE_X, mouse_x);
         w.g.m.set_i32(MOUSE_Y, mouse_y);
@@ -128,7 +110,6 @@ impl Game {
         for (i, k) in self.keys.iter_mut().enumerate() {
             *k = w.g.m.u8(kb + i as u32);
         }
-        w.set_keys(&self.keys);
         w.time_ms = time_ms;
         if local_time.len() >= 6 {
             w.local_time.copy_from_slice(&local_time[..6]);
@@ -136,44 +117,23 @@ impl Game {
         if smooth {
             self.tween.before_tick(w);
         }
-        w.step();
-        if w.net_waiting {
-            if let Some(n) = self.net.as_mut() {
-                n.begin_exchange(w);
+        match self.net.as_mut().filter(|n| n.in_game()) {
+            Some(n) => {
+                n.advance(w, &mut self.keys);
             }
-            self.net_smooth = smooth;
-            return 0;
-        }
-        self.finish(smooth)
-    }
-
-    /// For tests (examples/net_peer prints the same): a digest of every object's
-    /// position, hp and frame after each packet exchange.
-    fn log_exchange(&mut self) {
-        let w = &self.world;
-        let mut h: u64 = 0;
-        for i in 0..400 {
-            if w.exists(i) {
-                let o = &w.objs[i];
-                for v in [o.x().to_bits(), o.y().to_bits(), o.z().to_bits(), o.hp() as u64, o.frame() as u64] {
-                    h = h.wrapping_mul(1_000_003).wrapping_add(v ^ i as u64);
+            None => {
+                w.set_keys(&self.keys);
+                w.step();
+                // the frame writes 'u' over keys it consumed (the F-keys)
+                for (i, k) in self.keys.iter_mut().enumerate() {
+                    *k = w.g.m.u8(kb + i as u32);
                 }
             }
         }
-        let n = self.net_log.len();
-        self.net_log.push(format!("{} phase {} digest {:016x}", n, w.g.match_phase(), h));
-    }
-
-    fn finish(&mut self, smooth: bool) -> u32 {
-        let w = &mut self.world;
         if smooth {
             self.tween.after_tick(w);
         } else {
             self.tween.clear();
-        }
-        // the frame writes 'u' over keys it consumed (the F-keys)
-        for (i, k) in self.keys.iter_mut().enumerate() {
-            *k = w.g.m.u8(lf2_sim::world::KEYS + i as u32);
         }
         let period = if w.g.m.i32(0x44d02c) == 0 { 3 } else { 0x21 };
         if !smooth {
@@ -206,35 +166,70 @@ impl Game {
         }
     }
 
-    /// The data channel opened.
-    pub fn net_connected(&mut self) {
+    /// A data channel opened. `peer` is the page's number for the link: the
+    /// host's joiners count from 1, a joiner's host is 0.
+    pub fn net_connected(&mut self, peer: u32) {
         if let Some(n) = self.net.as_mut() {
-            n.on_connected();
+            n.on_connected(&mut self.world, peer);
         }
     }
 
-    /// Bytes from the other computer.
-    pub fn net_data(&mut self, bytes: &[u8]) {
+    /// A message from a link.
+    pub fn net_data(&mut self, peer: u32, bytes: &[u8]) {
         if let Some(n) = self.net.as_mut() {
-            n.on_data(bytes);
+            n.on_message(&mut self.world, peer, bytes);
         }
     }
 
-    /// The link failed or closed.
-    pub fn net_closed(&mut self, message: &str) {
-        if let Some(n) = self.net.as_mut() {
-            n.on_closed(&mut self.world, message);
+    /// The rendezvous server failed, or a joiner lost its link to the host.
+    pub fn net_failed(&mut self, message: &str) {
+        let Some(n) = self.net.as_mut() else { return };
+        if n.is_host() {
+            if !n.in_game() {
+                n.error = Some(message.to_string());
+                self.world.net_connect_failed();
+            }
+        } else {
+            n.on_closed(&mut self.world, 0, message);
         }
     }
 
-    /// Bytes to send to the other computer (all of them since the last call).
+    /// A link failed or closed.
+    pub fn net_closed(&mut self, peer: u32, message: &str) {
+        if let Some(n) = self.net.as_mut() {
+            n.on_closed(&mut self.world, peer, message);
+        }
+    }
+
+    /// The messages to send since the last call, each as the peer (1 byte), the
+    /// length (4 bytes, little-endian) and the message.
     pub fn net_outgoing(&mut self) -> Vec<u8> {
-        self.net.as_mut().map(|n| n.take_outgoing().concat()).unwrap_or_default()
+        let mut out = Vec::new();
+        for (peer, m) in self.net.as_mut().map(|n| n.take_outgoing()).unwrap_or_default() {
+            out.push(peer as u8);
+            out.extend_from_slice(&(m.len() as u32).to_le_bytes());
+            out.extend_from_slice(&m);
+        }
+        out
     }
 
-    /// The exchange digests so far, one per line (see `log_exchange`).
+    /// For tests: "frames rollbacks resimulated waits" of the network game.
+    pub fn net_stats(&self) -> String {
+        match self.net.as_ref().and_then(|n| n.rollback()) {
+            Some(r) => format!("{} {} {} {}", r.frame(), r.rollbacks, r.resimulated, r.stalls),
+            None => String::new(),
+        }
+    }
+
+    /// The number of computers in the room the waiting screen lists.
+    pub fn net_players(&self) -> u32 {
+        self.world.net_players.len() as u32
+    }
+
+    /// For tests: the state hashes of the network game so far, "frame hash" per
+    /// line (examples/net_peer prints the same).
     pub fn net_log(&self) -> String {
-        self.net_log.join("\n")
+        self.net.as_ref().map(|n| n.log.iter().map(|(f, h)| format!("{} {:016x}", f, h)).collect::<Vec<_>>().join("\n")).unwrap_or_default()
     }
 
     /// A message for the player when the connection failed, else "".
@@ -336,6 +331,11 @@ impl Game {
                 MenuRequest::NetHost => out += "net-host\n",
                 MenuRequest::NetConnect => out += &format!("net-join {}\n", self.world.room_code_typed()),
                 MenuRequest::NetClose => out += "net-close\n",
+                MenuRequest::NetStart => {
+                    if let Some(n) = self.net.as_mut() {
+                        n.start(&mut self.world);
+                    }
+                }
                 MenuRequest::OpenRecording => out += "open-recording\n",
                 MenuRequest::SaveControls(t) => {
                     let _ = lf2_data::vfs::write(&lf2_data::resolve(std::path::Path::new(""), b"data\\control.txt"), &t);

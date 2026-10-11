@@ -136,13 +136,13 @@ pub enum MenuRequest {
     OpenAdUrl(u32),
     /// Show a message box.
     Message(&'static str),
-    /// Network game: host a room on the rendezvous server, show its code with
-    /// `World::set_room_code`, and when the other computer connects do the server's
-    /// handshake (`net_reply`, `net_table`, then `net_server_joined`).
+    /// Network game: host a room on the rendezvous server (a `NetSession::host`).
     NetHost,
-    /// Network game: join the room whose code is `World::room_code_typed` and do the
-    /// client's handshake (`net_hello`, then `net_client_joined`).
+    /// Network game: join the room whose code is `World::room_code_typed` (a
+    /// `NetSession::join`).
     NetConnect,
+    /// Network game: the host pressed Enter to start (`NetSession::start`).
+    NetStart,
     /// Network game: leave the room or close the connection.
     NetClose,
     /// Write data\\control.txt with this text.

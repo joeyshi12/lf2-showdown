@@ -1,224 +1,338 @@
-//! Two worlds play a network game against each other in one process: one as the
-//! server, one as the client, with the handshake and the packets passed directly
-//! instead of over sockets. They must go through the title screens, the main menu,
-//! the pick screen and a VS match together, with the same objects on every frame
-//! and no check failing (counter, version, hp sum, data checksum).
+//! Network games between worlds in one process, with the messages passed through a
+//! simulated network that delays, reorders and drops them. Two to four computers go
+//! from the title screens through the main menu and the pick screen into a VS
+//! match and fight. Then:
+//! - no computer reports a synchronisation error (the state hashes agree);
+//! - every computer's world, once all inputs are in, is the same as a world that
+//!   ran the same inputs once, without rollback, from the host's state at the start.
 use lf2_sim::menu::main_menu::{MenuRequest, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
+use lf2_sim::net::NetSession;
+use lf2_sim::rollback::Input;
+use lf2_sim::world::{GAME, KEYS};
 use lf2_sim::World;
 use std::sync::Arc;
 
-struct Pair {
-    s: World,
-    c: World,
-    s_keys: [u8; 256],
-    c_keys: [u8; 256],
-    frames: usize,
+const J: usize = 0x4a;
+const K: usize = 0x4b;
+const W: usize = 0x57;
+const A: usize = 0x41;
+const S: usize = 0x53;
+const D: usize = 0x44;
+
+struct Profile {
+    computers: usize,
+    latency_ms: u64,
+    jitter_ms: u64,
+    /// Of every 100 INPUT messages, this many are lost.
+    loss: u64,
 }
 
-fn messages(w: &mut World) -> Vec<String> {
-    let mut out = Vec::new();
-    for r in std::mem::take(&mut w.requests) {
-        match r {
-            MenuRequest::Message(m) => out.push(m.to_string()),
-            MenuRequest::NetHost => lf2_sim::net::set_room_code(w, "AB2C"),
-            _ => {}
-        }
-    }
-    out
+struct Peer {
+    w: World,
+    s: NetSession,
+    keys: [u8; 256],
+    /// Frames of the platform's clock since the game started.
+    ticks: u32,
 }
 
-impl Pair {
-    /// One frame on both computers; the exchange frames pass the packets across.
-    fn frame(&mut self) {
-        self.s.set_keys(&self.s_keys);
-        self.c.set_keys(&self.c_keys);
-        self.s.step();
-        self.c.step();
-        assert_eq!(self.s.net_waiting, self.c.net_waiting, "frame {}: only one side exchanges", self.frames);
-        if self.s.net_waiting {
-            let (ps, pc) = (self.s.net_out.take().unwrap(), self.c.net_out.take().unwrap());
-            self.c.net_resume(Some(&ps));
-            self.s.net_resume(Some(&pc));
-        }
-        // the frames write 'u' over keys they consumed
-        for i in 0..256u32 {
-            self.s_keys[i as usize] = self.s.g.m.u8(lf2_sim::world::KEYS + i);
-            self.c_keys[i as usize] = self.c.g.m.u8(lf2_sim::world::KEYS + i);
-        }
-        let (ms, mc) = (messages(&mut self.s), messages(&mut self.c));
-        assert!(ms.is_empty() && mc.is_empty(), "frame {}: server {:?} client {:?}", self.frames, ms, mc);
-        self.frames += 1;
+/// A message on its way: arrival time, sender (peer index), receiver, bytes.
+struct InFlight {
+    at: u64,
+    from: usize,
+    to: usize,
+    m: Vec<u8>,
+}
+
+struct Lan {
+    p: Profile,
+    peers: Vec<Peer>,
+    flight: Vec<InFlight>,
+    /// The last arrival time on each (from, to) link of the messages that keep
+    /// their order.
+    ordered: Vec<Vec<u64>>,
+    now: u64,
+    rng: u64,
+    /// The host's state when the game started, for the run without rollback.
+    start: Option<(lf2_sim::rollback::State, Vec<[u8; 11]>, Vec<u8>)>,
+}
+
+impl Lan {
+    fn rand(&mut self, n: u64) -> u64 {
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        if n == 0 { 0 } else { self.rng % n }
     }
 
-    fn frames(&mut self, n: usize) {
-        for _ in 0..n {
-            self.frame();
+    /// The peer id a computer uses for another: the host numbers its joiners
+    /// 1..3, a joiner calls the host 0.
+    fn peer_id(&self, me: usize, other: usize) -> u32 {
+        if me == 0 { other as u32 } else { 0 }
+    }
+
+    fn send_all(&mut self, from: usize) {
+        for (id, m) in self.peers[from].s.take_outgoing() {
+            let to = if from == 0 { id as usize } else { 0 };
+            let input = m[0] == 3;
+            if input && self.rand(100) < self.p.loss {
+                continue;
+            }
+            let mut at = self.now + self.p.latency_ms + self.rand(self.p.jitter_ms + 1);
+            if !input {
+                at = at.max(self.ordered[from][to]);
+                self.ordered[from][to] = at;
+            }
+            self.flight.push(InFlight { at, from, to, m });
+        }
+    }
+
+    fn deliver(&mut self) {
+        let mut k = 0;
+        while k < self.flight.len() {
+            if self.flight[k].at <= self.now {
+                let f = self.flight.remove(k);
+                let id = self.peer_id(f.to, f.from);
+                let p = &mut self.peers[f.to];
+                p.s.on_message(&mut p.w, id, &f.m);
+            } else {
+                k += 1;
+            }
+        }
+    }
+
+    /// One 33 ms frame of every computer's clock.
+    fn tick(&mut self) {
+        self.now += 33;
+        self.deliver();
+        for i in 0..self.peers.len() {
+            let p = &mut self.peers[i];
+            if p.s.in_game() {
+                script(i, p);
+                p.s.advance(&mut p.w, &mut p.keys);
+                p.ticks += 1;
+            } else {
+                p.w.set_keys(&p.keys);
+                p.w.step();
+                for k in 0..256u32 {
+                    p.keys[k as usize] = p.w.g.m.u8(KEYS + k);
+                }
+            }
+            let p = &mut self.peers[i];
+            for r in std::mem::take(&mut p.w.requests) {
+                match r {
+                    MenuRequest::NetStart => {
+                        let (state, table) = (p.w.save_state(), p.w.net_table());
+                        p.s.start(&mut p.w);
+                        let names = (0..self_count(&p.w)).map(|s| name_at(&p.w, s)).collect();
+                        self.start = Some((state, names, table));
+                    }
+                    MenuRequest::Message(m) => panic!("computer {}: message {:?} at frame {:?}", i, m, p.s.rollback().map(|r| r.frame())),
+                    MenuRequest::Quit => panic!("computer {} quit", i),
+                    _ => {}
+                }
+            }
+            if let Some(e) = self.peers[i].s.error.take() {
+                panic!("computer {}: {}", i, e);
+            }
+            self.send_all(i);
         }
     }
 
     fn click(w: &mut World, x: i32, y: i32) {
-        w.g.m.set_i32(MOUSE_X, x);
-        w.g.m.set_i32(MOUSE_Y, y);
-        w.g.m.set_i32(MOUSE_CLICK, 1);
-    }
-
-    /// A key held for 3 frames, then let go for 7, on the server (`server`) or client.
-    fn tap(&mut self, server: bool, vk: usize) {
-        for k in 0..10 {
-            let v = if k < 3 { b'd' } else { b'u' };
-            if server {
-                self.s_keys[vk] = v;
-            } else {
-                self.c_keys[vk] = v;
-            }
-            self.frame();
+        for c in [0, 1, 0] {
+            w.g.m.set_i32(MOUSE_X, x);
+            w.g.m.set_i32(MOUSE_Y, y);
+            w.g.m.set_i32(MOUSE_CLICK, c);
+            w.step();
         }
     }
 }
 
-#[test]
-fn server_and_client_stay_in_step() {
+fn self_count(w: &World) -> usize {
+    (0..8u32).filter(|&s| w.g.m.i32(lf2_sim::world::PLAYER_OF_SLOT + 4 * s) == -1).count()
+}
+
+fn name_at(w: &World, s: usize) -> [u8; 11] {
+    std::array::from_fn(|k| w.g.m.u8(0x44fcc0 + 11 * s as u32 + k as u32))
+}
+
+/// The keys computer `i` holds, by its own frame count since the game started:
+/// through the menus with taps far enough apart for the slowest profile, then a
+/// fight in which each player walks to the nearest other one and attacks.
+fn script(i: usize, p: &mut Peer) {
+    let t = p.ticks;
+    let mut down: Vec<usize> = Vec::new();
+    let tap = |at: u32| (at..at + 4).contains(&t);
+    if i == 0 && tap(40) {
+        down.push(J); // VS mode
+    }
+    for k in 0..4 {
+        if tap(80 + 16 * k + 2 * i as u32) {
+            down.push(J); // join, fighter, team, ready
+        }
+    }
+    let menu = 80 + 64 + 200;
+    if i == 0 {
+        for (k, key) in [J, W, W, J].iter().enumerate() {
+            if tap(menu + 16 * k as u32) {
+                down.push(*key); // no computer players, up twice to Fight!, go
+            }
+        }
+    }
+    let w = &p.w;
+    let me = p.s.rollback().map_or(i, |r| r.me());
+    if t > menu + 120 && w.g.match_phase() == 0 && w.exists(me) {
+        let others: Vec<usize> = (0..4).filter(|&s| s != me && w.exists(s) && w.objs[s].hp() > 0).collect();
+        if let Some(&o) = others.iter().min_by_key(|&&o| (w.objs[o].ix() - w.objs[me].ix()).abs()) {
+            let (dx, dz) = (w.objs[o].ix() - w.objs[me].ix(), w.objs[o].iz() - w.objs[me].iz());
+            if dx > 50 {
+                down.push(D);
+            } else if dx < -50 {
+                down.push(A);
+            }
+            if dz > 6 {
+                down.push(S);
+            } else if dz < -6 {
+                down.push(W);
+            }
+        }
+        if t % (5 + i as u32) < 2 {
+            down.push(J);
+        }
+        if t % (41 + 3 * i as u32) < 2 {
+            down.push(K);
+        }
+    }
+    p.keys = [b'u'; 256];
+    for k in down {
+        p.keys[k] = b'd';
+    }
+}
+
+fn run(p: Profile) {
     let Some(dir) = lf2_data::game_dir_from_env() else { return };
     let exe = lf2_data::read_exe(&dir).unwrap();
     let gd = Arc::new(lf2_data::GameData::load(&dir).unwrap());
     let controls = lf2_data::controls::load(&dir).unwrap_or_default();
-    let mut s = World::new_title(gd.clone(), &exe, &controls, None, 11);
-    let mut c = World::new_title(gd.clone(), &exe, &controls, None, 22);
-    s.ads_removed = true;
-    c.ads_removed = true;
-    let mut p = Pair { s, c, s_keys: [b'u'; 256], c_keys: [b'u'; 256], frames: 0 };
-    // both: title screen, "network game" (x 0x114..0x208, y y0+0xf7..y0+0x110)
-    for w in [&mut p.s, &mut p.c] {
-        for _ in 0..5 {
-            w.step();
+    let n = p.computers;
+    let mut peers = Vec::new();
+    for i in 0..n {
+        let mut w = World::new_title(gd.clone(), &exe, &controls, None, 11 + 7 * i as u32);
+        w.ads_removed = true;
+        for (k, b) in format!("p{}", i).bytes().chain([0]).enumerate() {
+            w.g.m.set_u8(0x44fcc0 + k as u32, b);
         }
-        let y0 = w.g.m.i32(lf2_sim::menu::main_menu::MENU_Y);
-        Pair::click(w, 0x150, y0 + 0x100);
-        w.step();
-        messages(w);
-        w.g.m.set_i32(MOUSE_CLICK, 0);
-        w.step();
-        assert_eq!(w.g.m.i32(0x44d064), 1, "network screen");
+        let s = if i == 0 { NetSession::host() } else { NetSession::join() };
+        peers.push(Peer { w, s, keys: [b'u'; 256], ticks: 0 });
     }
-    // server: "server" (hosts a room); client: "client", type the room code, Enter
-    Pair::click(&mut p.s, 0x150, 0x118);
-    p.s.step();
-    p.s.g.m.set_i32(MOUSE_CLICK, 0);
-    assert!(p.s.requests.iter().any(|r| *r == MenuRequest::NetHost), "server hosts a room");
-    messages(&mut p.s);
-    p.s.step();
-    assert_eq!(p.s.g.m.i32(0x44d064), 2, "server waits");
-    assert_eq!(p.s.g.m.u8(lf2_sim::net::LOCAL_IP), b'A', "the room code is shown");
-    Pair::click(&mut p.c, 0x150, 0x138);
-    p.c.step();
-    p.c.g.m.set_i32(MOUSE_CLICK, 0);
-    p.c.step();
-    assert_eq!(p.c.g.m.i32(0x44d064), 3, "client asks for the address");
-    let mut keys = [b'u'; 256];
-    for &vk in b"AB2C" {
-        keys[vk as usize] = b'd';
-        p.c.set_keys(&keys);
-        p.c.step();
-        keys[vk as usize] = b'u';
-        p.c.set_keys(&keys);
-        p.c.step();
+    let mut lan = Lan { ordered: vec![vec![0; n]; n], p, peers, flight: Vec::new(), now: 0, rng: 0x9e3779b97f4a7c15, start: None };
+    // the title screens: "network game", then server or client
+    for (i, peer) in lan.peers.iter_mut().enumerate() {
+        for _ in 0..5 {
+            peer.w.step();
+        }
+        let y0 = peer.w.g.m.i32(lf2_sim::menu::main_menu::MENU_Y);
+        Lan::click(&mut peer.w, 0x150, y0 + 0x100);
+        Lan::click(&mut peer.w, 0x150, if i == 0 { 0x118 } else { 0x138 });
+        peer.w.requests.clear();
     }
-    // typed in capitals without Shift
-    assert_eq!(p.c.room_code_typed(), "AB2C");
-    // Ctrl+V types nothing; a paste adds the text in capitals, without spaces
-    keys[0x11] = b'd';
-    keys[b'V' as usize] = b'd';
-    p.c.set_keys(&keys);
-    p.c.step();
-    keys[0x11] = b'u';
-    keys[b'V' as usize] = b'u';
-    p.c.set_keys(&keys);
-    p.c.step();
-    assert_eq!(p.c.room_code_typed(), "AB2C");
-    lf2_sim::menu::title::paste_room_code(&mut p.c, " x9 ");
-    assert_eq!(p.c.room_code_typed(), "AB2CX9");
-    for _ in 0..2 {
-        keys[0x08] = b'd';
-        p.c.set_keys(&keys);
-        p.c.step();
-        keys[0x08] = b'u';
-        p.c.set_keys(&keys);
-        p.c.step();
+    let host = &mut lan.peers[0];
+    host.s.on_code(&mut host.w, "AB2C");
+    for i in 1..n {
+        let p = &mut lan.peers[i];
+        p.s.on_connected(&mut p.w, 0);
+        lan.send_all(i);
     }
-    assert_eq!(p.c.room_code_typed(), "AB2C");
-    keys[0x0d] = b'd';
-    p.c.set_keys(&keys);
-    p.c.step();
-    keys[0x0d] = b'u';
-    p.c.set_keys(&keys);
-    p.c.step();
-    assert!(p.c.requests.iter().any(|r| *r == MenuRequest::NetConnect), "client connects");
-    p.c.requests.clear();
-    // the handshake
-    let hello = p.c.net_hello();
-    p.s.net_server_joined(&hello);
-    let (reply, table) = (p.s.net_reply(), p.s.net_table());
-    p.c.net_client_joined(&reply, &table);
-    // the server's next frame starts the game; the client's state 4 does it too
-    p.s.step();
-    p.c.step();
-    assert_eq!(p.s.g.m.i32(lf2_sim::world::GAME), 1);
-    assert_eq!(p.c.g.m.i32(lf2_sim::world::GAME), 1);
-    // from here both run in step: loading, the main menu
-    p.frames(20);
-    assert_eq!(p.s.g.match_phase(), 10, "main menu");
-    // VS mode (player 1 of the server presses attack), the pick screen: player 1 of
-    // the server and player 1 of the client join and pick a fighter
-    let j = 0x4a;
-    p.tap(true, j);
-    p.frames(10);
-    for _ in 0..4 {
-        p.tap(true, j);
+    for _ in 0..30 {
+        lan.tick();
     }
-    for _ in 0..4 {
-        p.tap(false, j);
+    assert_eq!(lan.peers[0].w.net_players.len(), n, "the host lists every computer");
+    // the host presses Enter
+    lan.peers[0].keys[0x0d] = b'd';
+    for _ in 0..3 {
+        lan.tick();
     }
-    p.frames(260);
-
-    // no computer players, then the menu: up twice to "Fight!" (on the client) and
-    // attack (on the server)
-    p.tap(true, j);
-    p.frames(10);
-    p.tap(false, 0x57);
-    p.tap(false, 0x57);
-    p.tap(true, j);
-    p.frames(100);
-
-    assert_eq!(p.s.g.match_phase(), 0, "the match runs");
-    // fight for a while: the server's player runs right and punches, the client's
-    // player walks left and jumps
-    for n in 0..600 {
-        // walk towards each other (each computer's player 1 is in its own slots)
-        let (sx, cx) = (p.s.objs[0].ix(), p.s.objs[4].ix());
-        p.s_keys[0x44] = if sx < cx - 60 { b'd' } else { b'u' };
-        p.s_keys[0x41] = if sx > cx + 60 { b'd' } else { b'u' };
-        p.c_keys[0x41] = if cx > sx + 60 { b'd' } else { b'u' };
-        p.c_keys[0x44] = if cx < sx - 60 { b'd' } else { b'u' };
-        let (sz, cz) = (p.s.objs[0].iz(), p.s.objs[4].iz());
-        p.s_keys[0x53] = if sz < cz - 5 { b'd' } else { b'u' };
-        p.s_keys[0x57] = if sz > cz + 5 { b'd' } else { b'u' };
-        p.s_keys[j] = if n % 6 < 2 { b'd' } else { b'u' };
-        p.c_keys[j] = if n % 9 < 2 { b'd' } else { b'u' };
-        p.c_keys[0x4b] = if n % 37 < 2 { b'd' } else { b'u' };
-        p.frame();
-        for i in 0..400 {
-            assert_eq!(p.s.exists(i), p.c.exists(i), "frame {}: object {} exists on one side", p.frames, i);
-            if p.s.exists(i) {
-                let (a, b) = (&p.s.objs[i], &p.c.objs[i]);
-                assert!(
-                    a.x() == b.x() && a.y() == b.y() && a.z() == b.z() && a.hp() == b.hp() && a.frame() == b.frame(),
-                    "frame {}: object {} differs",
-                    p.frames,
-                    i
-                );
+    lan.peers[0].keys[0x0d] = b'u';
+    for _ in 0..30 {
+        lan.tick();
+    }
+    for (i, peer) in lan.peers.iter().enumerate() {
+        assert!(peer.s.in_game(), "computer {} is in the game", i);
+        assert!(peer.w.g.m.i32(GAME) >= 1);
+    }
+    // the menus and a fight
+    let mut fought = false;
+    for _ in 0..1500 {
+        lan.tick();
+        let w = &lan.peers[0].w;
+        fought |= w.g.match_phase() == 0 && (0..n).all(|s| w.exists(s));
+    }
+    assert!(fought, "the match ran with every computer's fighter");
+    // stop pressing keys and let every computer's inputs arrive
+    let target = lan.peers.iter().map(|p| p.s.rollback().unwrap().frame()).max().unwrap() + 4;
+    for _ in 0..200 {
+        lan.now += 33;
+        lan.deliver();
+        for i in 0..n {
+            let p = &mut lan.peers[i];
+            p.keys = [b'u'; 256];
+            if p.s.rollback().unwrap().frame() < target {
+                p.s.advance(&mut p.w, &mut p.keys);
+            } else {
+                p.s.settle(&mut p.w);
+            }
+            p.w.requests.retain(|r| !matches!(r, MenuRequest::Message(_)) || panic!("computer {}: {:?}", i, r));
+            lan.send_all(i);
+        }
+    }
+    let hurt = (0..n).filter(|&s| {
+        let w = &lan.peers[0].w;
+        w.exists(s) && w.objs[s].hp() < w.objs[s].max_hp()
+    });
+    assert!(hurt.count() >= 1, "the fighters hit each other");
+    for (i, peer) in lan.peers.iter().enumerate() {
+        let rb = peer.s.rollback().unwrap();
+        assert_eq!(rb.frame(), target, "computer {} reached the frame", i);
+        assert!(rb.confirmed() >= target, "computer {} has every input", i);
+    }
+    // the same inputs once, without rollback, from the host's state at the start
+    let (state, names, table) = lan.start.take().unwrap();
+    let rb0 = lan.peers[0].s.rollback().unwrap();
+    let inputs: Vec<Vec<Input>> = (0..n).map(|s| (0..target).map(|f| rb0.input(s, f)).collect()).collect();
+    let mut r = World::new_title(gd.clone(), &exe, &controls, None, 1);
+    r.ads_removed = true;
+    r.load_state(&state);
+    r.net_start(&names, 0, &table);
+    let mut prev = vec![[0u8; 3]; n];
+    for f in 0..target {
+        let now: Vec<Input> = (0..n).map(|s| inputs[s][f as usize]).collect();
+        r.net_step(&now, &prev, f);
+        prev = now;
+    }
+    for (i, peer) in lan.peers.iter().enumerate() {
+        for o in 0..400 {
+            assert_eq!(peer.w.exists(o), r.exists(o), "computer {}: object {} exists", i, o);
+            if r.exists(o) {
+                assert!(peer.w.objs[o].m.bytes == r.objs[o].m.bytes, "computer {}: object {} differs from the run without rollback", i, o);
             }
         }
+        assert_eq!(peer.w.state_hash(), r.state_hash(), "computer {}", i);
+        let rb = peer.s.rollback().unwrap();
+        eprintln!("computer {}: {} frames, {} rollbacks, {} frames run again, {} waits", i, rb.frame(), rb.rollbacks, rb.resimulated, rb.stalls);
     }
-    let hurt = (0..8).any(|i| p.s.exists(i) && p.s.objs[i].hp() < p.s.objs[i].max_hp());
-    assert!(hurt, "the fighters hit each other");
+}
+
+#[test]
+fn two_computers_without_delay() {
+    run(Profile { computers: 2, latency_ms: 0, jitter_ms: 0, loss: 0 });
+}
+
+#[test]
+fn two_computers_slow_connection() {
+    run(Profile { computers: 2, latency_ms: 80, jitter_ms: 40, loss: 5 });
+}
+
+#[test]
+fn four_computers_with_loss() {
+    run(Profile { computers: 4, latency_ms: 60, jitter_ms: 50, loss: 10 });
 }

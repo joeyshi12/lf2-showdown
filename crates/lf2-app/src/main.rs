@@ -299,9 +299,8 @@ fn main() {
     let mut warned = 0;
     let mut mouse_was_down = false;
     let mut net = lf2_app::net::Net::default();
-    // Key events since the window's last update. While the world waits (for the
-    // other computer, or a network handshake) they are kept, as Windows keeps the
-    // messages the original does not read while it waits.
+    // Key events since the window's last update, given to the key array at the
+    // start of the next frame.
     let mut events: Vec<(u8, bool)> = Vec::new();
     let take_events = |window: &Window, events: &mut Vec<(u8, bool)>| {
         for k in window.get_keys_pressed(KeyRepeat::Yes) {
@@ -335,30 +334,13 @@ fn main() {
     };
     while window.is_open() {
         take_events(&window, &mut events);
-        // a frame waiting for the other computer's packet, or a handshake
         let mut stepped = false;
         let over = quick && (world.g.match_phase() != 0 || world.g.end_timer() > 0x15d);
-        if world.net_waiting {
-            match net.poll_exchange(&mut world) {
-                Some(p) => {
-                    world.net_resume(p.as_deref());
-                    stepped = true;
-                }
-                None => {
-                    window.update();
-                    std::thread::sleep(Duration::from_millis(1));
-                    continue;
-                }
-            }
-        } else if net.handshake_busy(&mut world) {
-            window.update();
-            std::thread::sleep(Duration::from_millis(5));
-            continue;
-        }
+        net.pump(&mut world);
         if let Some(e) = net.take_error() {
             platform::message(&e);
         }
-        if !stepped {
+        {
             // Ctrl+V pastes a room code on the client screen
             let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
             if ctrl && events.contains(&(b'V', true)) {
@@ -395,12 +377,14 @@ fn main() {
                 if fps == 60 {
                     tween.before_tick(&world);
                 }
-                world.set_keys(&keys);
-                world.step();
-                if world.net_waiting {
-                    // the other half of the frame comes with the other computer's packet
-                    net.begin_exchange(&mut world);
-                    continue;
+                if net.in_game() {
+                    // rollback: no frame, one, or two (NetSession::advance)
+                    net.advance(&mut world, &mut keys);
+                } else {
+                    world.set_keys(&keys);
+                    world.step();
+                    // the frame writes 'u' over keys it consumed (the F-keys)
+                    keys.copy_from_slice(&world.g.m.bytes[(0x455378 - 0x44d000)..(0x455378 - 0x44d000 + 256)]);
                 }
                 stepped = true;
             }
@@ -409,8 +393,6 @@ fn main() {
             if fps == 60 {
                 tween.after_tick(&world);
             }
-            // the frame writes 'u' over keys it consumed (the F-keys)
-            keys.copy_from_slice(&world.g.m.bytes[(0x455378 - 0x44d000)..(0x455378 - 0x44d000 + 256)]);
             audio.play(&world.sounds, world.g.m.i32(0x44d000));
             audio.play_buffers(&world.buffer_sounds);
             audio.music(&world.music, world.g.m.i32(0x44d000));
@@ -440,6 +422,7 @@ fn main() {
                 MenuRequest::NetHost => net.host(),
                 MenuRequest::NetConnect => net.connect(&mut world),
                 MenuRequest::NetClose => net.close(),
+                MenuRequest::NetStart => net.start(&mut world),
                 MenuRequest::OpenRecording => {
                     open_recording(&mut world, &dir, &exe);
                     tween.clear();
