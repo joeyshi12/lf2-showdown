@@ -165,13 +165,8 @@ fn put_cstr(g: &mut Globals, at: u32, s: &[u8]) {
 }
 
 impl World {
-    /// The state the main menu (match_phase 10) starts in: start-up in WinMain
-    /// (0x43cf40: controls, ads), the top menu's "Game start" (0x4246b0: the random
-    /// table, players 1-4 in slots 0-3) and the first match frame (0x41bc90: objects
-    /// 0-7 with the first data file). `seed` stands for the timeGetTime() WinMain
-    /// seeds rand() with.
-    /// The state of the title screen right after start-up (WinMain 0x43cf40:
-    /// control.txt, ads, srand(seed)); the game state 0x458b00 is 0.
+    /// Title screen after WinMain 0x43cf40 loads controls and ads and calls
+    /// `srand(seed)`.
     pub fn new_title(
         gd: Arc<GameData>,
         exe: &[u8],
@@ -241,8 +236,8 @@ impl World {
         World::with_state(g, objs, gd)
     }
 
-    /// The state the main menu (match_phase 10) starts in: the title screen, then
-    /// "Game start" and the frame that loads the data.
+    /// Main menu state after WinMain 0x43cf40, "Game start" at 0x4246b0 and the
+    /// first match frame at 0x41bc90.
     pub fn new_boot(
         gd: Arc<GameData>,
         exe: &[u8],

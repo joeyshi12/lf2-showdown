@@ -22,16 +22,9 @@ fn between(a: i32, b: i32, c: i32) -> bool {
 const NO_CMD: i32 = -1000;
 
 impl World {
-    /// Copy the current keys to the previous keys and clear the current keys.
     fn ai_shift_keys(&mut self, s: usize) {
         let o = &mut self.objs[s];
-        o.set_prev_up(o.up());
-        o.set_prev_down(o.down());
-        o.set_prev_left(o.left());
-        o.set_prev_right(o.right());
-        o.set_prev_attack(o.attack());
-        o.set_prev_jump(o.jump());
-        o.set_prev_defend(o.defend());
+        o.shift_keys();
         ai_clear_keys(o);
     }
 
@@ -221,7 +214,7 @@ impl World {
         let mut avoid = false; // bVar4
         let mut heal_target = false; // bVar3
         if idx < 0 {
-            self.ai_no_target(s, idx, MAX_OBJECTS);
+            self.ai_no_target(s, idx);
             return;
         }
         let enemy = idx;
@@ -327,7 +320,7 @@ impl World {
             idx = enemy;
         }
         if idx < 0 {
-            self.ai_no_target(s, idx, MAX_OBJECTS);
+            self.ai_no_target(s, idx);
             return;
         }
         let t = idx as usize;
@@ -665,8 +658,8 @@ impl World {
     }
 
     /// 0x4094b0, the part after the target search when there is no target
-    /// (LAB_0040b7b5). `last` is the loop counter the original reads the object from.
-    fn ai_no_target(&mut self, s: usize, idx: i32, last: usize) {
+    /// (LAB_0040b7b5).
+    fn ai_no_target(&mut self, s: usize, idx: i32) {
         if idx != -1 {
             return;
         }
@@ -674,7 +667,6 @@ impl World {
             // with cmd_hold the original measures against objects[400], which is the
             // file-manager pointer after the array: its "iz" and "ix" are data
             // pointers, far out of range, so only cmd_hold == 0 walks left
-            let _ = last;
             if self.objs[s].cmd_hold() == 0 {
                 self.objs[s].set_left(1);
             }

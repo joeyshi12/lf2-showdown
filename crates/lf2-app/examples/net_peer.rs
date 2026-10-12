@@ -22,9 +22,6 @@ const D: usize = 0x44;
 const HOST: (i32, i32) = (397, 243);
 const JOIN: (i32, i32) = (397, 277);
 
-/// The keys held at frame `t` of the game (the script of tests/network.rs, by
-/// frames run instead of frames of the clock). The
-/// computer in seat `driver` goes through the menus.
 fn script(seat: usize, driver: usize, t: u32, w: &World) -> Vec<usize> {
     let mut down = Vec::new();
     let tap = |at: u32| (at..at + 4).contains(&t);
@@ -180,7 +177,6 @@ fn main() {
     let rb = net.session().unwrap().rollback().unwrap();
     let hurt = (0..rb.seats()).filter(|&i| w.exists(i) && w.objs[i].hp() < w.objs[i].max_hp()).count();
     println!("done: {} fighters hurt; {} rollbacks, {} frames run again, {} waits", hurt, rb.rollbacks, rb.resimulated, rb.stalls);
-    // let the others finish
     for _ in 0..240 {
         net.pump(&mut w);
         net.settle(&mut w);

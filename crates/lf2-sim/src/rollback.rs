@@ -1,16 +1,9 @@
-//! Rollback for the network game: every computer runs the frames as soon as its
-//! own input is there, guessing the inputs of the others from the last ones that
-//! arrived. When an input arrives that differs from the guess, the world goes back
-//! to the frame it belongs to and runs the frames since then again with it.
-//!
-//! A frame here is one call of `World::step` from the network game's start (the
-//! "loading" frame) on. The match frame reads keys only every second frame
-//! (half_frame 0); there the packet holds every computer's keys of that frame and
-//! the F-keys of that frame and the one before, so no F-key press is lost.
-//!
-//! The state saved before each frame is everything the simulation reads: the
-//! globals, the objects, and the parts of `World` outside them (stage spawn counters,
-//! the recording, the menu background).
+//! Saves the world before each network frame, predicts missing inputs from the last
+//! received keys, and replays from the earliest wrong prediction. A frame here is one
+//! `World::step`; the original reads input every second frame (`half_frame == 0`).
+//! The packet carries F-keys from that frame and the one before, so a press is not
+//! lost. Saved state includes globals, objects, stage counters, recordings and menu
+//! state.
 
 use crate::fields::{Globals, Obj};
 use crate::menu::main_menu::{MOUSE_CLICK, MOUSE_X, MOUSE_Y};
@@ -34,7 +27,6 @@ pub const HASH_EVERY: u32 = 16;
 /// The frame period the network game's clock (`World::time_ms`) counts in.
 const FRAME_MS: u32 = 33;
 
-/// The state of the world before one frame.
 pub struct State {
     g: Globals,
     objs: Vec<Obj>,
@@ -150,33 +142,28 @@ impl World {
     }
 }
 
-/// The inputs and saved states of a network game on one computer.
 pub struct Rollback {
     seats: usize,
     me: usize,
-    /// The frames run: the world is the state before frame `frame`.
+    /// The world is the state before this frame.
     frame: u32,
-    /// Each seat's inputs from frame 0 on, as far as they have arrived in order.
+    /// Each seat's inputs from frame 0, as far as they arrived in order.
     inputs: Vec<Vec<Input>>,
-    /// A seat whose computer left presses nothing from this frame on.
     left: [Option<u32>; MAX_SEATS],
-    /// The inputs each frame from `base` on was run with.
+    /// Inputs and states for each frame from `base`.
     used: VecDeque<[Input; MAX_SEATS]>,
-    /// The state before each frame from `base` on.
     states: VecDeque<State>,
     /// States no longer needed, kept to reuse their buffers.
     spare: Vec<State>,
     base: u32,
     /// The earliest frame run with a guess that turned out wrong.
     redo_from: Option<u32>,
-    /// Frames up to here have been hashed.
+    /// Frames below this have been hashed.
     hashed: u32,
     new_hashes: Vec<(u32, u64)>,
-    /// Statistics: frames run again, rollbacks, frames waited.
     pub resimulated: u64,
     pub rollbacks: u64,
     pub stalls: u64,
-    /// Frames the last correction ran again.
     pub last_redo: u32,
 }
 
@@ -228,17 +215,15 @@ impl Rollback {
         self.inputs[seat].len() as u32
     }
 
-    /// How many of the seat's inputs have arrived.
     pub fn input_count(&self, seat: usize) -> u32 {
         self.inputs[seat].len() as u32
     }
 
-    /// The frames whose inputs are all known.
     pub fn confirmed(&self) -> u32 {
         (0..self.seats).map(|s| self.known(s)).min().unwrap_or(0)
     }
 
-    /// A known input (`f` < `input_count`).
+    /// `f` must be below `input_count(seat)`.
     pub fn input(&self, seat: usize, f: u32) -> Input {
         self.inputs[seat][f as usize]
     }
@@ -280,7 +265,6 @@ impl Rollback {
         self.inputs[seat].push(input);
     }
 
-    /// The seat's computer left: from frame `at` on it presses nothing.
     pub fn leave(&mut self, seat: usize, at: u32) {
         if self.left[seat].is_some() {
             return;
@@ -301,8 +285,7 @@ impl Rollback {
         self.left[seat] = Some(at);
     }
 
-    /// Hashes of the state before frames that every computer's inputs are known
-    /// for, since the last call.
+    /// States whose inputs every computer knows, since the previous call.
     pub fn take_hashes(&mut self) -> Vec<(u32, u64)> {
         std::mem::take(&mut self.new_hashes)
     }

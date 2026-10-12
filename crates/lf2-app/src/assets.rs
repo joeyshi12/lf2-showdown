@@ -1,6 +1,3 @@
-//! Images loaded from the game folder and from lf2.exe's resources, in the form the
-//! renderer uses.
-
 use lf2_data::image::{decode_bmp, decode_dib, pe_bitmaps, Image};
 use lf2_data::GameData;
 use std::collections::HashMap;
@@ -29,12 +26,9 @@ impl Surface {
     }
 }
 
-/// The sprite sheets of one data file, normal and mirrored.
 pub struct Sheets {
     /// (first pic, cell count, normal, mirrored) per `file(...)` line.
     pub sheets: Vec<(i32, i32, Surface, Surface)>,
-    /// The large face for the pick screen (`head:`).
-    #[allow(dead_code)]
     pub face: Option<Surface>,
     pub small: Option<Surface>,
 }
@@ -48,7 +42,6 @@ pub struct Assets {
     pub objects: Vec<Sheets>,
     pub backgrounds: Vec<BgAssets>,
     pub res: HashMap<String, Surface>,
-    /// The ad picture `sprite\\sys\\adN.bmp` with the cells `ads_load_images` sets.
     pub ad: Option<Surface>,
 }
 

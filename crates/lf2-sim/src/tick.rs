@@ -177,10 +177,7 @@ impl World {
                     continue;
                 }
                 let o = &mut self.objs[slot];
-                for k in 0..7u32 {
-                    let cur = o.m.u8(0xcd + k);
-                    o.m.set_u8(0xc6 + k, cur);
-                }
+                o.shift_keys();
                 if half != 0 {
                     continue;
                 }
@@ -533,6 +530,34 @@ impl World {
 }
 
 impl World {
+    fn spawn_falling_weapon(&mut self, slot: usize, data: usize, x: i32, z: i32) {
+        let hp = self.gd.objects[data].weapon_hp;
+        let o = &mut self.objs[slot];
+        crate::collisions::obj_reset(o);
+        o.m.set_i32(0x368, data as i32);
+        o.set_x(x as f64);
+        o.set_weapon_hp(hp);
+        o.set_y(-500.0);
+        o.set_z(z as f64);
+        self.set_exists(slot, true);
+        for j in 0..MAX_OBJECTS {
+            if self.exists(j) {
+                self.objs[j].m.set_u8(0xf0 + slot as u32, 0);
+            }
+        }
+        let id = self.gd.objects[data].id;
+        let o = &mut self.objs[slot];
+        o.set_vx(0.0);
+        o.set_vy(0.0);
+        o.set_vz(0.0);
+        if id == 0x7a {
+            o.set_hp(200);
+        }
+        o.set_ix(crate::mem::ftol(o.x()));
+        o.set_iy(crate::mem::ftol(o.y()));
+        o.set_iz(crate::mem::ftol(o.z()));
+    }
+
     /// 0x41f04b: a random weapon falls from the sky (y = -500) somewhere on the
     /// background.
     /// 0x4214e3 (F8 in tool mode): drop one of every weapon and item (ids 100..199;
@@ -562,31 +587,7 @@ impl World {
                 self.unported("F8 weapon rain with no free slot (0x42156x)");
                 return;
             };
-            let hp = self.gd.objects[data].weapon_hp;
-            let o = &mut self.objs[slot];
-            crate::collisions::obj_reset(o);
-            o.m.set_i32(0x368, data as i32);
-            o.set_x(x as f64);
-            o.set_weapon_hp(hp);
-            o.set_y(-500.0);
-            o.set_z(z as f64);
-            self.set_exists(slot, true);
-            for j in 0..MAX_OBJECTS {
-                if self.exists(j) {
-                    self.objs[j].m.set_u8(0xf0 + slot as u32, 0);
-                }
-            }
-            let id = self.gd.objects[data].id;
-            let o = &mut self.objs[slot];
-            o.set_vx(0.0);
-            o.set_vy(0.0);
-            o.set_vz(0.0);
-            if id == 0x7a {
-                o.set_hp(200);
-            }
-            o.set_ix(crate::mem::ftol(o.x()));
-            o.set_iy(crate::mem::ftol(o.y()));
-            o.set_iz(crate::mem::ftol(o.z()));
+            self.spawn_falling_weapon(slot, data, x, z);
         }
     }
 
@@ -622,32 +623,8 @@ impl World {
             self.unported("weapon drop with no free slot or no weapon data (0x41f0xx)");
             return;
         };
-        let hp = self.gd.objects[data].weapon_hp;
-        let o = &mut self.objs[slot];
-        crate::collisions::obj_reset(o);
-        o.m.set_i32(0x368, data as i32);
-        o.set_x(x as f64);
-        o.set_weapon_hp(hp);
-        o.set_y(-500.0);
-        o.set_z(z as f64);
-        self.set_exists(slot, true);
-        for j in 0..MAX_OBJECTS {
-            if self.exists(j) {
-                self.objs[j].m.set_u8(0xf0 + slot as u32, 0);
-            }
-        }
-        let id = self.gd.objects[data].id;
-        let o = &mut self.objs[slot];
-        o.set_vx(0.0);
-        o.set_vy(0.0);
-        o.set_vz(0.0);
-        if id == 0x7a {
-            o.set_hp(200);
-        }
-        o.set_ix(crate::mem::ftol(o.x()));
-        o.set_iy(crate::mem::ftol(o.y()));
-        o.set_iz(crate::mem::ftol(o.z()));
-        o.m.set_i32(0x354, 99);
+        self.spawn_falling_weapon(slot, data, x, z);
+        self.objs[slot].m.set_i32(0x354, 99);
     }
 }
 

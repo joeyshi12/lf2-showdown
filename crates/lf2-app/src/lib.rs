@@ -1,4 +1,4 @@
-//! The platform layer: images, rendering and sound for the lf2 binary.
+//! Desktop rendering, audio, window and network support.
 pub mod assets;
 pub mod exe_image;
 #[cfg(windows)]

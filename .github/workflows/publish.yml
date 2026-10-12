@@ -1,12 +1,7 @@
 name: publish
 
-# Builds the web version and deploys it to Cloudflare Pages. Deploys happen on a `v*` tag or by
-# hand, not on every merge, and a deploy replaces the site. Rolling back is promoting the
-# previous Pages deployment.
-#
-# The page loads the game from game/ next to it, so the repository's game/ is deployed with it.
-# Needs the secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and optionally the variable
-# CLOUDFLARE_PROJECT_NAME.
+# Deploys game/ with the web build. A deploy replaces the site; rollback means
+# promoting a previous Cloudflare Pages deployment.
 on:
   push:
     tags: ['v*']

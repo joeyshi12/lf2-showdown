@@ -273,14 +273,10 @@ async function playMusic(name) {
   music = { src, gain, playing: true };
 }
 
-// The network game: the messages of lf2_sim::net::NetSession over WebRTC data
-// channels, set up through the icebreaker rendezvous server with a room code. The
-// host has one link per joiner (up to three), numbered from 1; a joiner has one
-// link, to the host, numbered 0. Each link has two channels: "lf2", reliable and
-// ordered, for the room, and "lf2-fast", unordered and without resending, for the
-// inputs and pings (a lost input message is repeated by the next one). Offers and
-// answers carry all candidates (icebreaker does not pass trickled ones), so each
-// side waits for candidate gathering to finish first.
+// Each joiner has one WebRTC link to the host. The host numbers joiners from 1;
+// a joiner calls the host 0. Room messages use a reliable channel; inputs and pings
+// use an unordered channel without retransmits. SDP candidates are gathered before
+// offers and answers because there is no trickling.
 const RENDEZVOUS = new URLSearchParams(location.search).get("rendezvous") || "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
 const FAST_CHANNEL = { ordered: false, maxRetransmits: 0 };
 const net = {
@@ -418,11 +414,8 @@ const net = {
 window.lf2Net = net;   // for tests (tools/web/browser_check.mjs)
 window.lf2Game = () => game;
 
-// pictures shown, ticks run and animation frames per second, over the last second
 let rates = { pictures: 0, ticks: 0, frames: 0 };
-// the last smooth pictures: [time, a tick ran in this frame, t]
 const recent = [];
-// for tests (tools/web/browser_check.mjs): what is playing, and the rates
 window.lf2Status = () => ({ music: music ? musicFile : "", musicGain: music ? music.gain.gain.value : 0, audio: audio ? audio.state : "",
   picturesPerSecond: rates.pictures, ticksPerSecond: rates.ticks, framesPerSecond: rates.frames,
   recent: recent.map((r) => r.join(":")).join(" ") });
@@ -434,9 +427,6 @@ function download(name, bytes) {
   a.click();
 }
 
-// The game files come from the folder picker, or, with ?game=DIR, from DIR on the
-// same server (DIR/files.txt lists the paths, one per line; tools/web/package.sh
-// writes it).
 async function startGame(entries) {
   status.textContent = `reading ${entries.length} files...`;
   await init();
@@ -514,7 +504,6 @@ canvas.addEventListener("keydown", (e) => {
   if (v >= 0) { game.key_down(v); e.preventDefault(); }
 });
 canvas.addEventListener("keyup", (e) => { const v = vk(e.code); if (v >= 0) { game.key_up(v); e.preventDefault(); } });
-// pasting a room code on the client screen
 document.addEventListener("paste", (e) => {
   if (!game) return;
   game.paste(e.clipboardData.getData("text"));
@@ -533,18 +522,11 @@ pick.addEventListener("change", async () => {
 
 const start = performance.now();
 const image = ctx.createImageData(794, 550);
-// The simulation runs one tick per period (33 ms, 3 ms in F5 fast mode), as the
-// original, counted from requestAnimationFrame's clock. With smooth motion every
-// animation frame shows a picture: the pictures run one tick behind the simulation,
-// and an animation frame t ms after a tick shows the tick before it with the objects
-// moved t / period of the way to their positions in that tick (render::Tween). So
-// motion on the screen follows the clock evenly at any display rate. In fast mode
-// each tick shows its own picture, as the original.
+// Ticks are 33 ms, or 3 ms in F5 fast mode. Smooth pictures run one tick behind;
+// time since the tick chooses the position between its saved states.
 function run() {
   let next = performance.now(), period = 0x21, tickAt = next, first = true;
   let count = { pictures: 0, ticks: 0, frames: 0 }, countStart = next;
-  // one tick: "ok", "wait" (a network game waits for the other computer; nothing
-  // ran) or "quit"
   const tick = () => {
     const d = new Date();
     const p = game.step(smoothNow(), mouse.x, mouse.y, mouse.down, Math.floor(performance.now() - start),
@@ -568,7 +550,6 @@ function run() {
     }
     return handleRequests() ? "ok" : "quit";
   };
-  // what the frame asked the page to do; false when the game quit
   const handleRequests = () => {
     for (const r of game.requests().split("\n")) {
       if (!r) continue;

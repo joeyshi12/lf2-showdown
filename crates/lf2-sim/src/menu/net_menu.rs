@@ -23,13 +23,11 @@ const RULE: u32 = 0x23398a;
 const WHITE: u32 = 0xffffff;
 const ERR: u32 = 0xff9b8a;
 const CODE_BG: u32 = 0x0b1a4d;
-/// The colour of each seat's number.
 const SEAT: [u32; 4] = [0xf2c14e, 0x7ad0f0, 0xef7d7d, 0x8fe08a];
 /// Characters typed into the room code so far (0x4511dc, the original's count of
 /// typed address characters).
 const TYPED: u32 = 0x4511dc;
 pub const CODE_LEN: i32 = 4;
-/// The panel's left edge and width; it is centred on the screen.
 const PX: i32 = 237;
 const PW: i32 = 320;
 const MID: i32 = PX + PW / 2;
@@ -61,7 +59,6 @@ impl World {
         x <= mx && mx < x + w && y <= my && my < y + h
     }
 
-    /// A box with rounded corners: a 2-pixel `line` around `fill`.
     fn rounded(&mut self, x: i32, y: i32, w: i32, h: i32, line: u32, fill: u32) {
         let shape = |s: &mut World, x: i32, y: i32, w: i32, h: i32, r: i32, c: u32| {
             for i in 0..r.min(h / 2) {
@@ -76,13 +73,11 @@ impl World {
         shape(self, x + 2, y + 2, w - 4, h - 4, 5, fill);
     }
 
-    /// The panel with its title on the top line, as the original's "network game".
     fn panel(&mut self, y: i32, h: i32, title: &str) {
         self.rounded(PX, y, PW, h, LINE, PANEL);
         self.draw.push(crate::draw::Draw::Label { text: title.as_bytes().to_vec(), rgb: LINE, x: PX + 24, y: y - 8, align: -1, scale: 1, pad: Some(PANEL) });
     }
 
-    /// A button; true when it was clicked.
     fn button(&mut self, x: i32, y: i32, w: i32, label: &str, enabled: bool) -> bool {
         let hover = enabled && self.mouse_in(x, y, w, 24);
         let (line, fill, text) = match (enabled, hover) {
@@ -95,7 +90,6 @@ impl World {
         hover && self.clicked()
     }
 
-    /// A menu item: text that gets a box when the mouse is on it.
     fn item(&mut self, y: i32, label: &str) -> bool {
         let hover = self.mouse_in(PX + 20, y, PW - 40, 26);
         if hover {
@@ -105,7 +99,6 @@ impl World {
         hover && self.clicked()
     }
 
-    /// The four boxes of the room code; `cursor` blinks in that box.
     fn code_boxes(&mut self, y: i32, code: &[u8], cursor: Option<i32>) {
         let x0 = MID - (4 * 42 + 3 * 8) / 2;
         for i in 0..CODE_LEN {
@@ -121,7 +114,6 @@ impl World {
         }
     }
 
-    /// The seats: number, name, "host" or "you", round-trip time.
     fn seats(&mut self, y: i32) {
         let players = self.net_ui.players.clone();
         self.fill(PX + 18, y, PW - 36, 1, RULE);
@@ -149,7 +141,6 @@ impl World {
         }
     }
 
-    /// Eight bars that light up one after another.
     fn pulse(&mut self, y: i32) {
         let lit = (self.time_ms / 150 % 10) as i32;
         for i in 0..8 {
@@ -190,7 +181,6 @@ impl World {
         self.requests.push(MenuRequest::NetConnect);
     }
 
-    /// Title screen states 1 to 5.
     pub(crate) fn net_screens(&mut self) {
         if self.g.m.i32(0x4511ac) == 0 {
             self.load_menu_background();
@@ -361,7 +351,6 @@ impl World {
     }
 }
 
-/// `text` in lines of at most about `max` characters, broken at spaces.
 fn wrap(text: &str, max: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();

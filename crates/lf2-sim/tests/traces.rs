@@ -3,7 +3,6 @@
 //! passes.
 
 use lf2_sim::trace::Trace;
-use lf2_sim::{compare, World};
 use std::sync::Arc;
 
 #[test]
@@ -25,14 +24,9 @@ fn recorded_traces_match_the_original() {
     let mut failures = Vec::new();
     for p in &paths {
         let t = Trace::load(p, &exe).unwrap();
-        let mut w = World::from_snapshot(&t.frames[0].state, gd.clone());
-        // state outside the snapshot (stage-mode spawn counters) comes as pokes
-        w.apply_pokes(&t.frames[0].pokes);
+        let mut w = t.start_world(gd.clone());
         for n in 0..t.frames.len() - 1 {
-            w.set_keys(&t.frames[n].keys);
-            w.step();
-            w.apply_pokes(&t.frames[n + 1].pokes);
-            let d = compare::compare(&w, &t.frames[n + 1].state);
+            let d = t.step_and_compare(&mut w, n);
             if !d.is_empty() {
                 let shown: Vec<String> =
                     d.iter().take(6).map(|x| format!("{} ours {} game {}", x.what, x.ours, x.theirs)).collect();

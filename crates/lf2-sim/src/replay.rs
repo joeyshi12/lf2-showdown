@@ -164,13 +164,7 @@ impl World {
         for i in 0..8 {
             let b = self.replay_frame[i];
             let o = &mut self.objs[i];
-            o.set_prev_up(o.up());
-            o.set_prev_down(o.down());
-            o.set_prev_left(o.left());
-            o.set_prev_right(o.right());
-            o.set_prev_attack(o.attack());
-            o.set_prev_jump(o.jump());
-            o.set_prev_defend(o.defend());
+            o.shift_keys();
             if half == 0 {
                 o.set_up((b & 0x80 != 0) as i8);
                 o.set_down((b & 0x40 != 0) as i8);

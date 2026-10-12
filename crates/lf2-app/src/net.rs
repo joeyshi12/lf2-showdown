@@ -17,22 +17,18 @@ impl Default for Net {
 }
 
 impl Net {
-    /// MenuRequest::NetHost.
     pub fn host(&mut self) {
         self.link = Some((Link::host(rendezvous_url()), NetSession::host()));
     }
 
-    /// MenuRequest::NetConnect: join the room whose code the player typed.
     pub fn connect(&mut self, world: &mut World) {
         self.link = Some((Link::join(rendezvous_url(), world.room_code_typed()), NetSession::join()));
     }
 
-    /// MenuRequest::NetClose.
     pub fn close(&mut self) {
         self.link = None;
     }
 
-    /// MenuRequest::NetStart: the host starts the game.
     pub fn start(&mut self, world: &mut World) {
         if let Some((_, s)) = self.link.as_mut() {
             s.start(world);
@@ -40,8 +36,6 @@ impl Net {
         self.flush();
     }
 
-    /// True while the game runs over the network: call `advance` instead of
-    /// `World::step`.
     pub fn in_game(&self) -> bool {
         self.link.as_ref().is_some_and(|(_, s)| s.in_game())
     }
@@ -50,8 +44,6 @@ impl Net {
         self.link.as_ref().map(|(_, s)| s)
     }
 
-    /// Pass the links' events to the session and its messages to the links. Call
-    /// once per frame.
     pub fn pump(&mut self, world: &mut World) {
         let Some((link, s)) = self.link.as_mut() else { return };
         s.set_clock(self.start.elapsed().as_millis() as u32);
@@ -84,8 +76,6 @@ impl Net {
         }
     }
 
-    /// Send the inputs again and run the frames whose guesses were wrong, without
-    /// new frames (for tests that stop at a frame).
     pub fn settle(&mut self, world: &mut World) {
         if let Some((_, s)) = self.link.as_mut() {
             s.settle(world);
@@ -93,8 +83,6 @@ impl Net {
         self.flush();
     }
 
-    /// One frame of the game over the network (NetSession::advance): the number
-    /// of new frames.
     pub fn advance(&mut self, world: &mut World, keys: &mut [u8; 256]) -> u32 {
         let n = match self.link.as_mut() {
             Some((_, s)) => s.advance(world, keys),

@@ -186,6 +186,20 @@ impl Trace {
         }
         Ok(Trace { frames })
     }
+
+    /// State outside a trace snapshot (stage spawn counters) comes from its pokes.
+    pub fn start_world(&self, gd: std::sync::Arc<lf2_data::GameData>) -> crate::World {
+        let mut w = crate::World::from_snapshot(&self.frames[0].state, gd);
+        w.apply_pokes(&self.frames[0].pokes);
+        w
+    }
+
+    pub fn step_and_compare(&self, w: &mut crate::World, n: usize) -> Vec<crate::compare::Diff> {
+        w.set_keys(&self.frames[n].keys);
+        w.step();
+        w.apply_pokes(&self.frames[n + 1].pokes);
+        crate::compare::compare(w, &self.frames[n + 1].state)
+    }
 }
 
 use lf2_data::flate;

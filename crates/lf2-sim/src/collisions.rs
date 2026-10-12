@@ -3,8 +3,8 @@
 //! `register_hit` 0x417400), plus the fusion check that runs right after
 //! (`after_collisions` 0x4064d0) and the knockback application (0x4196f0).
 //!
-//! An attacker's hits are collected in its hit list: victims at 0x280 (int[20]), itr
-//! index at 0x2d0 (u8[20]), count at 0x2e4. `obj_update` applies them later.
+//! An attacker's hits are collected in its hit list: victims at 0x280 (`int[20]`), itr
+//! index at 0x2d0 (`u8[20]`), count at 0x2e4. `obj_update` applies them later.
 
 use crate::fields::Obj;
 use crate::world::{World, MAX_OBJECTS};

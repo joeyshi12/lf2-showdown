@@ -3,16 +3,14 @@
 //! The original draws straight onto the back buffer with `blit_sprite` (0x43f010),
 //! `fill_rect` (0x415160) and `draw_text` (0x401290).
 
-/// A surface the original keeps a pointer to.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sheet {
-    /// The surface whose pointer is stored at this global (see `menu::sprites`).
     Global(u32),
-    /// The menu background `MENU_BACKn` (n = 1..13).
+    /// MENU_BACK1..13.
     MenuBack(i32),
-    /// The `head:` picture of an object data file (file-manager index).
+    /// File-manager index of an object's `head:` picture.
     Face(usize),
-    /// The `small:` picture of an object data file.
+    /// File-manager index of an object's `small:` picture.
     Small(usize),
 }
 
@@ -20,9 +18,9 @@ pub enum Sheet {
 pub enum Draw {
     /// `fill_rect(x, y, w, h, rgb)`; rgb is 0x00RRGGBB.
     Fill { x: i32, y: i32, w: i32, h: i32, rgb: u32 },
-    /// `blit_sprite(sheet, x, y, clip, key, mirror)`: clip -1 is the whole surface;
+    /// `blit_sprite(sheet, x, y, clip, key)`: clip -1 is the whole surface;
     /// `key` skips black pixels.
-    Blit { sheet: Sheet, x: i32, y: i32, clip: i32, key: bool, mirror: bool },
+    Blit { sheet: Sheet, x: i32, y: i32, clip: i32, key: bool },
     /// `draw_text`: TextOutA with the DC's default font (System), opaque background.
     /// Colours are COLORREF values (0x00BBGGRR).
     Text { text: Vec<u8>, bk: u32, color: u32, x: i32, y: i32 },
@@ -41,18 +39,17 @@ impl crate::World {
 
     /// `blit_sprite` on a surface held by a global.
     pub fn blit(&mut self, global: u32, x: i32, y: i32, clip: i32, key: bool) {
-        self.draw.push(Draw::Blit { sheet: Sheet::Global(global), x, y, clip, key, mirror: false });
+        self.draw.push(Draw::Blit { sheet: Sheet::Global(global), x, y, clip, key });
     }
 
     pub fn blit_sheet(&mut self, sheet: Sheet, x: i32, y: i32, clip: i32, key: bool) {
-        self.draw.push(Draw::Blit { sheet, x, y, clip, key, mirror: false });
+        self.draw.push(Draw::Blit { sheet, x, y, clip, key });
     }
 
     pub fn text(&mut self, text: &[u8], bk: u32, color: u32, x: i32, y: i32) {
         self.draw.push(Draw::Text { text: text.to_vec(), bk, color, x, y });
     }
 
-    /// A `Draw::Label` at normal size without a box.
     pub fn ui_text(&mut self, text: &str, rgb: u32, x: i32, y: i32, align: i8) {
         self.draw.push(Draw::Label { text: text.as_bytes().to_vec(), rgb, x, y, align, scale: 1, pad: None });
     }
