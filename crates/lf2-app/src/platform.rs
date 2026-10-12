@@ -4,9 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Ask for a .lfr file (GetOpenFileNameA in the original), starting in `dir`.
-/// Uses the desktop's own dialog program; without one it takes the newest .lfr file
-/// in `dir`.
+/// Opens a file dialog, or takes the newest .lfr in `dir` when no dialog program exists.
 pub fn pick_recording(dir: &Path) -> Option<PathBuf> {
     let d = dir.to_string_lossy().into_owned();
     let tries: Vec<(&str, Vec<String>)> = if cfg!(target_os = "windows") {
@@ -82,8 +80,6 @@ pub fn clipboard_text() -> Option<String> {
     None
 }
 
-/// Put text on the clipboard with the desktop's clipboard program (PowerShell on
-/// Windows; wl-copy, xclip or xsel on Linux).
 pub fn copy_text(text: &str) {
     use std::io::Write;
     let tries: &[(&str, &[&str])] = if cfg!(target_os = "windows") {
@@ -105,7 +101,6 @@ pub fn copy_text(text: &str) {
     eprintln!("no clipboard program found; room code {}", text);
 }
 
-/// ShellExecuteA "open": a web page or a folder.
 pub fn open(target: &str) {
     let prog = if cfg!(target_os = "windows") {
         "explorer"
@@ -119,7 +114,7 @@ pub fn open(target: &str) {
     }
 }
 
-/// The time for GetLocalTime. This is UTC: time zones are not handled.
+/// UTC; time zones are not handled.
 pub fn local_time() -> [u16; 6] {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let days = (secs / 86400) as i64;

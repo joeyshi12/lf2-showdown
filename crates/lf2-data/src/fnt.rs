@@ -1,6 +1,4 @@
-//! Windows bitmap fonts (.fon: an NE file holding FNT resources), for drawing text
-//! the way GDI's TextOutA does with the System font.
-
+//! Windows bitmap fonts used for the System font.
 /// One FNT font: glyph bitmaps for the characters first..=last.
 #[derive(Clone, Debug)]
 pub struct BitmapFont {

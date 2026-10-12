@@ -1,9 +1,5 @@
-//! The title menus before "Game start": `menus` (0x4246b0) while the game state
-//! (0x458b00) is 0. `DAT_0044d064` selects the screen: -2 first frame, -3 the
-//! question whether to show ads, 0 the title (Game start, Network Game, Control
-//! Settings, Recording Options), 6 the control settings, 7 the recording options and
-//! player info, 8 the "challenge" page after saving them. The network screens (-1,
-//! 1..4) are not ported.
+//! Original title menu at 0x4246b0 while game state 0x458b00 is 0. SCREEN
+//! (`DAT_0044d064`) selects it; network screens 1..5 are in `menu::net_menu`.
 
 use crate::menu::main_menu::{MenuRequest, MENU_CLIP, MENU_CLIP5, MENU_Y, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
 use crate::world::{World, KEYS};
@@ -226,7 +222,6 @@ impl World {
             6 => self.title_controls(),
             7 => self.title_recording(),
             8 => self.title_challenge(),
-            -1 => self.title_net_wait(),
             1..=5 => self.net_screens(),
             _ => {}
         }
@@ -337,7 +332,7 @@ impl World {
                     self.fill_random_table();
                     self.blit(MENU_CLIP, 0x115, y0 + 0xf7, 8, true);
                     if click {
-                        // net_init (0x402b60), then a listening socket on port 12345
+                        // the original calls net_init (0x402b60) and listens on port 12345
                         self.tw(MOUSE_CLICK, 0);
                         self.buffer_sounds.push("data\\m_ok.wav");
                         self.tw(SCREEN, 1);
@@ -634,36 +629,4 @@ impl World {
         }
     }
 
-    /// The progress dots of the waiting screens: `count` advances every 150 ms of the
-    /// platform clock (`flag` is the bit of 0x4511f0 that says the clock was read).
-    fn net_dots(&mut self, flag: i32, at: u32, count: u32, y: i32, x0: i32) {
-        let flags = self.t(0x4511f0);
-        if flags & flag == 0 {
-            self.tw(0x4511f0, flags | flag);
-            self.tw(at, self.time_ms as i32);
-        }
-        if 0x96 < self.time_ms.wrapping_sub(self.t(at) as u32) {
-            self.tw(count, (self.t(count) + 1) % 0xe);
-            self.tw(at, self.time_ms as i32);
-        }
-        for i in 0..self.t(count) {
-            self.fill(x0 + 0x14 * i, y, 5, 0xc, 0x577fd7);
-        }
-    }
-
-    /// State -1 (0x427a8x). Nothing in the original sets it.
-    fn title_net_wait(&mut self) {
-        self.blit(MENU_CLIP5, 0x102, 0xcd, 5, true);
-        self.net_dots(1, 0x4511ec, 0x4511e8, 0x122, 0x11c);
-        let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
-        if 0x14a < mx && 0x13f < my && mx < 0x1e2 && my < 0x15a {
-            self.blit(MENU_CLIP5, 0x14b, 0x140, 6, true);
-            if self.clicked() {
-                self.buffer_sounds.push("data\\m_cancel.wav");
-                self.tw(MOUSE_CLICK, 0);
-                self.tw(SCREEN, 0);
-            }
-        }
-        self.tw(0x4511e4, self.t(0x4511e4) + 1);
-    }
 }

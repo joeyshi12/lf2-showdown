@@ -123,33 +123,19 @@ pub fn key_name(vk: i32) -> (Vec<u8>, i32) {
     }
 }
 
-/// What the main menu asks the platform to do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuRequest {
-    /// Open the file dialog for a .lfr recording (menu item 6).
     OpenRecording,
-    /// Quit the game (menu item 7).
     Quit,
-    /// Open a web page (the credits and links are clickable).
     OpenUrl(&'static str),
-    /// Open the web page whose address is the string at this global.
     OpenAdUrl(u32),
-    /// Show a message box.
     Message(&'static str),
-    /// Network game: host a room on the rendezvous server (a `NetSession::host`).
     NetHost,
-    /// Network game: join the room whose code is `World::room_code_typed` (a
-    /// `NetSession::join`).
     NetConnect,
-    /// Network game: the host pressed Enter to start (`NetSession::start`).
     NetStart,
-    /// Put this text on the clipboard (the room code).
     CopyText(String),
-    /// Network game: leave the room or close the connection.
     NetClose,
-    /// Write data\\control.txt with this text.
     SaveControls(Vec<u8>),
-    /// Save a finished recording (the struct; `lf2_data::lfr::encode` makes the file).
     SaveRecording(Vec<u8>),
 }
 
@@ -163,7 +149,7 @@ impl World {
     }
 
     /// `championship_aux` (0x431b70): menu key presses. A key counts once per press
-    /// of any of objects 0..7 (0x451320[i] remembers whether one was held).
+    /// of any of objects 0..7 (`0x451320[i]` remembers whether one was held).
     pub fn menu_keys(&mut self) {
         for a in (KEY_UP..=KEY_DEFEND).step_by(4) {
             self.gs(a, 0);
@@ -199,7 +185,6 @@ impl World {
         self.gs(MENU_BACK, 0);
     }
 
-    /// Draw the menu background (when loaded) at y.
     pub(crate) fn draw_menu_background(&mut self, y: i32) {
         let n = self.menu_back;
         self.blit_sheet(crate::draw::Sheet::MenuBack(n), 0, y, -1, true);
@@ -414,7 +399,6 @@ impl World {
         }
     }
 
-    /// The mouse cursor, kept inside the window.
     pub(crate) fn draw_cursor(&mut self) {
         let x = self.gi(MOUSE_X).min(0x307);
         let y = (self.gi(MOUSE_Y) + 2).min(0x217);

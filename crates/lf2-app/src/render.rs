@@ -46,7 +46,6 @@ impl Frame {
         self.blit_rect(s, sx, sy, w, h, x, y, key);
     }
 
-    /// Copy a rectangle of `s` to (dx, dy), clipped to the screen and to the image.
     pub fn blit_rect(&mut self, s: &Surface, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, key: bool) {
         let (iw, ih) = (s.img.w as i32, s.img.h as i32);
         for yy in 0..h {
@@ -68,7 +67,6 @@ impl Frame {
         }
     }
 
-    /// Text in the WORDS font (8x16 cells, 9 pixels apart).
     pub fn text(&mut self, a: &Assets, font: &str, x: i32, y: i32, s: &str) {
         let Some(f) = a.res.get(font) else { return };
         for (i, c) in s.bytes().enumerate() {
@@ -85,7 +83,6 @@ fn in_match(w: &World) -> bool {
     w.g.match_phase() == 0 && w.g.m.i32(lf2_sim::world::GAME) == 2
 }
 
-/// Object positions (ix, iy, iz) and the camera after one tick.
 pub struct Positions {
     in_match: bool,
     cam: i32,
@@ -105,9 +102,7 @@ impl Positions {
 /// towards their positions in tick N+1. At the start of a tick that is exactly tick
 /// N's picture, and the motion on the screen always goes forward.
 pub struct Tween {
-    /// The state of tick N (only what drawing reads).
     shown: Option<World>,
-    /// Positions in tick N+1.
     next: Option<Positions>,
 }
 
@@ -116,19 +111,16 @@ impl Tween {
         Tween { shown: None, next: None }
     }
 
-    /// Call before `World::step`: keeps what tick N draws.
     pub fn before_tick(&mut self, w: &World) {
         let mut c = World::with_state(w.g.clone(), w.objs.clone(), w.gd.clone());
         c.draw = w.draw.clone();
         self.shown = Some(c);
     }
 
-    /// Call after `World::step`.
     pub fn after_tick(&mut self, w: &World) {
         self.next = Some(Positions::of(w));
     }
 
-    /// Forget the kept tick (after loading a recording or starting a new match).
     pub fn clear(&mut self) {
         self.shown = None;
         self.next = None;
@@ -331,16 +323,9 @@ impl Renderer {
                 let len = name.len() as i32;
                 let mut x = (o.m.i32(0x1c) - (len * 9) / 2) + o.ix() - cam;
                 x = x.max(0).min(len * -9 + 0x31a);
-                let font = match o.team() {
-                    1 => "WORDS1",
-                    2 => "WORDS2",
-                    3 => "WORDS3",
-                    4 => "WORDS4",
-                    _ => "WORDS0",
-                };
+                let font = team_font(o.team());
                 f.text(a, font, x, o.iz() + 3, &name);
             }
-            // hit sparks (state changes are in lf2_sim::hits::advance_sparks)
             if let Some(sp) = a.res.get("SPARK") {
                 for j in 0..o.m.i32(0x36c).clamp(0, 10) {
                     let k = o.m.i32(0x3c0 + 4 * j as u32);
@@ -396,7 +381,6 @@ fn draw_object(w: &World, a: &Assets, f: &mut Frame, i: usize, cam: i32, parity:
     }
 }
 
-/// 0x41ae60: the eight status panels.
 /// `draw_background_layer` (0x41a050): background 99, "Lee On Road", drawn from
 /// lf2.exe's bitmaps back99_1..3 and filled rectangles.
 fn draw_lee_on_road(cam: i32, a: &Assets, f: &mut Frame) {
@@ -430,6 +414,17 @@ fn draw_lee_on_road(cam: i32, a: &Assets, f: &mut Frame) {
     }
 }
 
+fn team_font(team: i32) -> &'static str {
+    match team {
+        1 => "WORDS1",
+        2 => "WORDS2",
+        3 => "WORDS3",
+        4 => "WORDS4",
+        _ => "WORDS0",
+    }
+}
+
+/// 0x41ae60: the eight status panels.
 fn draw_hud(w: &World, a: &Assets, f: &mut Frame) {
     let (Some(frame), Some(bars)) = (a.res.get("FRAME"), a.res.get("BARS")) else { return };
     for k in 0..8usize {
@@ -456,13 +451,7 @@ fn draw_hud(w: &World, a: &Assets, f: &mut Frame) {
             f.blit_rect(bars, 0, 10, 0x7c, 10, x, py + 0x24, false);
             f.blit_rect(bars, 0, 0, (o.mp() * 0x1f) / 0x7d, 10, x, py + 0x24, false);
         }
-        let font = match o.team() {
-            1 => "WORDS1",
-            2 => "WORDS2",
-            3 => "WORDS3",
-            4 => "WORDS4",
-            _ => "WORDS0",
-        };
+        let font = team_font(o.team());
         if let Some(s) = a.res.get(font) {
             f.blit(s, px + 5, py, 0xfe, true);
         }
@@ -475,13 +464,12 @@ fn colorref(c: u32) -> u32 {
 }
 
 impl Frame {
-    /// Execute a frame's drawing requests (`World::draw`).
     pub fn draw_list(&mut self, a: &Assets, list: &[lf2_sim::draw::Draw]) {
         use lf2_sim::draw::{Draw, Sheet};
         for d in list {
             match d {
                 Draw::Fill { x, y, w, h, rgb } => self.fill(*x, *y, *w, *h, *rgb),
-                Draw::Blit { sheet, x, y, clip, key, mirror: _ } => {
+                Draw::Blit { sheet, x, y, clip, key } => {
                     // the menus' cursor (0x4246b0 and 0x423b00 draw it at the mouse,
                     // x at most 0x307, y + 2 at most 0x217)
                     let (x, y) = match (sheet, self.cursor) {

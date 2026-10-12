@@ -1,6 +1,4 @@
-//! Ogg Vorbis decoding (pure Rust, with symphonia) for the bgm converted by
-//! tools/convert_bgm.sh.
-
+//! Ogg Vorbis decoding through symphonia.
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;

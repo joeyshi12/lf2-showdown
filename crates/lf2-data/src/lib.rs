@@ -84,7 +84,6 @@ pub fn load_text(path: &Path) -> Result<Vec<u8>, Error> {
     }
 }
 
-/// One `id:` line under `<object>` in data.txt.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectEntry {
     pub id: i32,
@@ -92,7 +91,6 @@ pub struct ObjectEntry {
     pub file: Vec<u8>,
 }
 
-/// One `id:` line under `<background>`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BackgroundEntry {
     pub id: i32,
@@ -237,7 +235,6 @@ impl GameData {
     }
 }
 
-/// The game folder from `LF2_DIR`, for tests and tools.
 pub fn game_dir_from_env() -> Option<PathBuf> {
     std::env::var_os("LF2_DIR").map(PathBuf::from).filter(|p| p.join("lf2.exe").exists() || p.join(EXE_IMAGE).exists())
 }

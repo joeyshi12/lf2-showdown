@@ -1,11 +1,5 @@
-//! The desktop window: winit makes the window and reports keys and the mouse,
-//! softbuffer shows the picture. The picture is the game's 794 x 550 screen, scaled
-//! to the window by the largest factor that fits (nearest neighbour, with black bars
-//! where the shape differs), so the window can be resized and made full screen.
-//! Alt+Enter toggles full screen, as in the original.
-//!
-//! The event loop is pumped from the game's own loop (`Display::pump`) instead of
-//! owning it.
+//! Resizable winit window with a softbuffer surface. `Display::pump` lets the game
+//! keep its own loop; the picture uses nearest-neighbour scaling with black bars.
 
 use crate::render::{H, W};
 use std::num::NonZeroU32;
@@ -146,8 +140,6 @@ pub fn layout(w: u32, h: u32) -> (f64, u32, u32, u32, u32) {
     (s, (w - dw.min(w)) / 2, (h - dh.min(h)) / 2, dw, dh)
 }
 
-/// Scale the picture `src` (W x H) into `dst` (`w` x `h`) as `layout` says: nearest
-/// neighbour, black around it.
 pub fn scale_into(src: &[u32], dst: &mut [u32], w: u32, h: u32) {
     let (_, ox, oy, dw, dh) = layout(w, h);
     let (w, ox, oy, dw, dh) = (
@@ -198,7 +190,6 @@ struct App {
     events: Vec<(u8, bool)>,
     held: [bool; 256],
     mods: ModifiersState,
-    /// The mouse in window pixels, and whether the left button is down.
     mouse: Option<(f64, f64)>,
     mouse_down: bool,
     /// The button went down since the game last looked: a click shorter than a frame
@@ -332,7 +323,6 @@ pub struct Display {
 }
 
 impl Display {
-    /// Open the window (full screen when asked) and wait until it exists.
     pub fn new(title: &str, fullscreen: bool) -> Display {
         let event_loop = EventLoop::new().expect("event loop");
         let app = App {
@@ -363,7 +353,6 @@ impl Display {
         d
     }
 
-    /// Handle the events that came in.
     pub fn pump(&mut self) {
         let _ = self
             .event_loop
@@ -374,8 +363,7 @@ impl Display {
         self.app.open
     }
 
-    /// Key events (virtual-key code, down) since the last call, with the repeats of
-    /// held keys.
+    /// Includes repeated key-down events for held keys.
     pub fn take_keys(&mut self, out: &mut Vec<(u8, bool)>) {
         out.append(&mut self.app.events);
     }
@@ -384,7 +372,6 @@ impl Display {
         self.app.mods.control_key()
     }
 
-    /// The left button is down, or went down since the last call.
     pub fn mouse_down(&mut self) -> bool {
         std::mem::take(&mut self.app.pressed) || self.app.mouse_down
     }
@@ -400,7 +387,6 @@ impl Display {
         Some((x, y))
     }
 
-    /// Show the picture (W x H pixels, 0x00RRGGBB).
     pub fn present(&mut self, px: &[u32]) {
         let (Some(window), Some(surface)) = (&self.app.window, &mut self.app.surface) else {
             return;
@@ -426,8 +412,6 @@ impl Display {
 mod tests {
     use super::*;
 
-    /// Every key the game reads directly: Enter, Shift, the arrows (replay camera), G
-    /// (the title screen), F1-F9, F11, F12, and the keys of the default control.txt.
     #[test]
     fn keys_the_game_reads_have_codes() {
         let pairs = [

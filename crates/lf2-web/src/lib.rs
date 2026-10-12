@@ -1,6 +1,4 @@
-//! The web build: the simulation and the renderer compiled to WebAssembly. The page
-//! (`web/index.html`) hands over the game folder's files, then each frame the keys
-//! and the mouse; it draws the picture and plays the sounds this module reports.
+//! WebAssembly interface used by `web/index.html`.
 
 use lf2_app::{assets::Assets, render};
 use lf2_sim::World;
@@ -12,7 +10,6 @@ thread_local! {
     static FILES: RefCell<Vec<(String, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Give one file of the game folder (`path` relative to it, e.g. "data/davis.dat").
 #[wasm_bindgen]
 pub fn add_file(path: &str, bytes: &[u8]) {
     FILES.with(|f| f.borrow_mut().push((path.to_string(), bytes.to_vec())));
@@ -28,12 +25,8 @@ pub struct Game {
     exe: Vec<u8>,
     mouse_was_down: bool,
     keys: [u8; 256],
-    /// Key events (virtual-key code, down) since the last frame, given to the key
-    /// array at the start of the next one.
     events: Vec<(u8, bool)>,
-    /// The last tick kept for pictures between ticks (see `render::Tween`).
     tween: render::Tween,
-    /// The network game; the page carries its messages over WebRTC.
     net: Option<lf2_sim::net::NetSession>,
 }
 
@@ -47,7 +40,6 @@ impl Game {
 
 #[wasm_bindgen]
 impl Game {
-    /// Load the files given with `add_file` and start at the title screen.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32) -> Result<Game, JsError> {
         let files = FILES.with(|f| std::mem::take(&mut *f.borrow_mut()));
@@ -127,7 +119,7 @@ impl Game {
             None => {
                 w.set_keys(&self.keys);
                 w.step();
-                // the frame writes 'u' over keys it consumed (the F-keys)
+                // The frame writes `u` over consumed F-keys.
                 for (i, k) in self.keys.iter_mut().enumerate() {
                     *k = w.g.m.u8(kb + i as u32);
                 }
@@ -146,45 +138,37 @@ impl Game {
         period
     }
 
-    /// Network game: the page asked the rendezvous server for a room (after the
-    /// "net-host" request).
     pub fn net_host(&mut self) {
         self.net = Some(lf2_sim::net::NetSession::host());
     }
 
-    /// Network game: the page joins a room (after "net-join CODE").
     pub fn net_join(&mut self) {
         self.net = Some(lf2_sim::net::NetSession::join());
     }
 
-    /// Network game: the link is gone (after "net-close", or the page gave up).
     pub fn net_drop(&mut self) {
         self.net = None;
     }
 
-    /// The rendezvous server gave the room code.
     pub fn net_code(&mut self, code: &str) {
         if let Some(n) = self.net.as_mut() {
             n.on_code(&mut self.world, code);
         }
     }
 
-    /// A data channel opened. `peer` is the page's number for the link: the
-    /// host's joiners count from 1, a joiner's host is 0.
+    /// The host numbers joiners from 1; a joiner calls the host 0.
     pub fn net_connected(&mut self, peer: u32) {
         if let Some(n) = self.net.as_mut() {
             n.on_connected(&mut self.world, peer);
         }
     }
 
-    /// A message from a link.
     pub fn net_data(&mut self, peer: u32, bytes: &[u8]) {
         if let Some(n) = self.net.as_mut() {
             n.on_message(&mut self.world, peer, bytes);
         }
     }
 
-    /// The rendezvous server failed, or a joiner lost its link to the host.
     pub fn net_failed(&mut self, message: &str) {
         let Some(n) = self.net.as_mut() else { return };
         if n.is_host() {
@@ -196,7 +180,6 @@ impl Game {
         }
     }
 
-    /// A link failed or closed.
     pub fn net_closed(&mut self, peer: u32, message: &str) {
         if let Some(n) = self.net.as_mut() {
             n.on_closed(&mut self.world, peer, message);
@@ -217,7 +200,6 @@ impl Game {
         out
     }
 
-    /// For tests: "frames rollbacks resimulated waits" of the network game.
     pub fn net_stats(&self) -> String {
         match self.net.as_ref().and_then(|n| n.rollback()) {
             Some(r) => format!("{} {} {} {}", r.frame(), r.rollbacks, r.resimulated, r.stalls),
@@ -225,13 +207,10 @@ impl Game {
         }
     }
 
-    /// The number of computers in the room the waiting screen lists.
     pub fn net_players(&self) -> u32 {
         self.world.net_ui.players.len() as u32
     }
 
-    /// For tests: the state hashes of the network game so far, "frame hash" per
-    /// line (examples/net_peer prints the same).
     pub fn net_log(&self) -> String {
         self.net.as_ref().map(|n| n.log.iter().map(|(f, h)| format!("{} {:016x}", f, h)).collect::<Vec<_>>().join("\n")).unwrap_or_default()
     }
@@ -242,7 +221,6 @@ impl Game {
     /// a tick; the mouse position is where the menus' cursor is drawn. Returns false
     /// when no tick is kept yet; `picture` then holds nothing new.
     pub fn draw_smooth(&mut self, t: f64, first: bool, mouse_x: i32, mouse_y: i32) -> bool {
-        // the menus' cursor follows the mouse on every picture
         self.frame.cursor = Some((mouse_x, mouse_y));
         if !self.tween.ready() {
             self.renderer.draw_frame(&self.world, &self.assets, &mut self.frame);
@@ -265,12 +243,10 @@ impl Game {
         self.events.push((vk, false));
     }
 
-    /// Text pasted from the clipboard: goes into the room code on the client screen.
     pub fn paste(&mut self, text: &str) {
         lf2_sim::menu::net_menu::paste_room_code(&mut self.world, text);
     }
 
-    /// The picture last drawn (by `step` or `draw_smooth`): 794 x 550 RGBA.
     pub fn picture(&self) -> Vec<u8> {
         self.rgba.clone()
     }
@@ -301,19 +277,16 @@ impl Game {
         out
     }
 
-    /// Music changes of the last frame: a bgm file name, or an empty line for stop.
     pub fn music(&self) -> String {
         self.world.music.iter().map(|m| m.as_ref().map(|f| String::from_utf8_lossy(f).into_owned()).unwrap_or_default() + "\n").collect()
     }
 
-    /// The master volume (0..100, F11/F12).
     pub fn volume(&self) -> i32 {
         self.world.g.m.i32(0x44d000)
     }
 
-    /// Requests of the last frame for the page: "url <address>", "message <text>",
-    /// "quit", "open-recording", "save-recording <file name>" (then call
-    /// `recording_file`), "save-controls" (then call `controls_file`).
+    /// Lines consumed by the page: `url`, `message`, `quit`, `open-recording`,
+    /// `save-recording`, `save-controls`, `net-*` and `copy`.
     pub fn requests(&mut self) -> String {
         use lf2_sim::menu::main_menu::MenuRequest;
         let mut out = String::new();
@@ -326,7 +299,6 @@ impl Game {
                     out += &format!("url {}\n", String::from_utf8_lossy(&s));
                 }
                 MenuRequest::Message(m) => out += &format!("message {}\n", m),
-                // the page does the WebRTC link (see net_* below)
                 MenuRequest::NetHost => out += "net-host\n",
                 MenuRequest::NetConnect => out += &format!("net-join {}\n", self.world.room_code_typed()),
                 MenuRequest::NetClose => out += "net-close\n",
@@ -352,12 +324,10 @@ impl Game {
         out
     }
 
-    /// A file written by the game (a saved recording or data/control.txt).
     pub fn written_file(&self, path: &str) -> Vec<u8> {
         lf2_data::vfs::read(std::path::Path::new(path)).unwrap_or_default()
     }
 
-    /// Play a .lfr recording. Returns an empty string, or the original's error text.
     pub fn play_recording(&mut self, file: &[u8]) -> String {
         use lf2_sim::replay::ReplayError;
         let rec = match lf2_data::lfr::decode(file, &self.exe) {

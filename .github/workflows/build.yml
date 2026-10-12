@@ -1,10 +1,6 @@
 name: build
 
-# The Linux and Windows programs, each packed with the game files from game/
-# (tools/package_release.sh) and uploaded as artifacts of the run. On a `v*` tag the archives
-# are also put on a GitHub release for that tag, which the web page links to. The tests replay the traces
-# against the game in game/, and the build puts game/lf2_image.bin (the parts of lf2.exe the
-# port uses) into the program, so the program can replace lf2.exe in a game folder.
+# Tests and packages Linux and Windows; tags also create releases.
 
 on:
   push:
@@ -52,8 +48,7 @@ jobs:
           path: lf2-showdown-linux-x86_64.tar.gz
           if-no-files-found: error
 
-  # Cross-built from Linux with zig (tools/cross/build-windows.sh), which is how the Windows
-  # program has been built and checked so far.
+  # Windows is cross-built with zig through tools/cross/build-windows.sh.
   windows:
     runs-on: ubuntu-latest
     steps:

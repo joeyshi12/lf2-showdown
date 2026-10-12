@@ -169,8 +169,6 @@ impl Audio {
         Some(stream)
     }
 
-    /// Apply the frame's music changes (`World::music`): Some(file) plays a bgm file
-    /// (or carries on with the loaded one), None stops it.
     pub fn music(&mut self, events: &[Option<Vec<u8>>], master: i32) {
         // music_play (0x401f30): IBasicAudio volume master * 34 - 3900 (hundredths
         // of a decibel), silent at 0

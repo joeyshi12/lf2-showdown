@@ -1,30 +1,13 @@
-//! The keyboard part of the window procedure (`wndproc`, 0x43b3d0): what WM_KEYDOWN
-//! and WM_KEYUP do to the game's memory. A platform layer that calls [`key_down`] and
-//! [`key_up`] (or `World::wm_keydown` and `World::wm_keyup`) with the Windows
-//! virtual-key code of each key event gets the key array and the two typed-word
-//! detectors exactly as the original has them.
-//!
-//! What the original does, from the decompile:
-//! - WM_KEYDOWN (0x100) writes `'d'` into the key array at 0x455378 + vk, also for
-//!   the repeated WM_KEYDOWN messages Windows sends while a key is held. WM_KEYUP
-//!   (0x101) writes `'u'`. Nothing else writes the key array from the keyboard.
-//! - WM_SYSKEYDOWN and WM_SYSKEYUP (0x104/0x105) leave the key array alone. Windows
-//!   sends those for Alt, for F10 and for every key pressed or released while Alt is
-//!   held, so the game never sees Alt (0x12) or F10 (0x79) pressed, and a key released
-//!   while Alt is held stays `'d'`. Alt+Enter toggles full screen.
-//! - Every WM_KEYDOWN also advances two detectors of typed words: "lf2.net" (state at
-//!   0x45857c) writes `'d'` at key 0xf9 and "herofighter.com" (state at 0x458578)
-//!   writes `'d'` at key 0xf8. The match frame treats those two entries like F-keys
-//!   (0xf9 toggles 0x458428, 0xf8 toggles 0x45842c). A detector advances on the next
-//!   letter of its word, keeps its state when the key is the letter it matched last
-//!   (so a held key's repeats do no harm), and otherwise goes back to 0. On the last
-//!   letter it writes the key and keeps its state, so holding that letter writes the
-//!   key again on every repeat.
-//! - Esc (0x1b) asks "Are you sure to quit?" after its key entry is written; the key
-//!   up then goes to the message box, so the Esc entry stays `'d'`.
+//! Keyboard effects of the original window procedure (`wndproc`, 0x43b3d0).
+//! WM_KEYDOWN/UP writes `d`/`u` at 0x455378 + vk, including repeats. WM_SYSKEY
+//! leaves the array unchanged; a key released while Alt is held therefore stays
+//! `d` (the platform handles Alt+Enter). Esc's key-up is hidden by its message box.
+//! Key-down advances the `lf2.net` and `herofighter.com` detectors at
+//! 0x45857c/0x458578. Repeating the last matched letter keeps progress; repeating the
+//! final letter presses 0xf9/0xf8 again, toggling 0x458428/0x45842c.
 
 use crate::fields::Globals;
-use crate::world::{World, KEYS};
+use crate::world::KEYS;
 
 /// State of the "lf2.net" detector (`DAT_0045857c`).
 pub const WORD_LF2NET: u32 = 0x45857c;
@@ -79,18 +62,6 @@ pub fn key_down(g: &mut Globals, vk: u8) -> KeyAction {
 /// WM_KEYUP with virtual-key code `vk`.
 pub fn key_up(g: &mut Globals, vk: u8) {
     g.m.set_u8(KEYS + vk as u32, b'u');
-}
-
-impl World {
-    /// WM_KEYDOWN, see [`key_down`].
-    pub fn wm_keydown(&mut self, vk: u8) -> KeyAction {
-        key_down(&mut self.g, vk)
-    }
-
-    /// WM_KEYUP, see [`key_up`].
-    pub fn wm_keyup(&mut self, vk: u8) {
-        key_up(&mut self.g, vk)
-    }
 }
 
 #[cfg(test)]

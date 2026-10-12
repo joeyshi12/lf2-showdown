@@ -402,7 +402,7 @@ pub fn obj_controls(w: &mut World, i: usize) {
         }
         obj_controls_jump_defend(&mut w.objs[i]);
     }
-    obj_controls_rest(w, i, wt)
+    obj_controls_rest(w, i)
 }
 
 /// The jump and defend checks that end the standing/walking block.
@@ -419,14 +419,12 @@ fn obj_controls_jump_defend(o: &mut Obj) {
     }
 }
 
-/// The part of 0x413080 after the standing/walking block. `wt` is the weapon type read
-/// before that block (the original keeps it in a register).
-fn obj_controls_rest(w: &mut World, i: usize, wt_before: i32) {
+/// The part of 0x413080 after the standing/walking block.
+fn obj_controls_rest(w: &mut World, i: usize) {
     let gd = w.gd.clone();
     let mp_cost_on = w.g.mp_cost_on() != 0;
     let d: &ObjectData = &gd.objects[w.objs[i].m.i32(0x368) as usize];
     let st = |o: &Obj| d.frames[o.frame() as usize].state;
-    let _ = wt_before;
 
     // heavy weapon: standing or walking
     {

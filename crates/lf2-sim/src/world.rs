@@ -16,49 +16,47 @@ pub const PLAYER_OF_SLOT: u32 = 0x450b4c;
 /// Controls per player p at `CONTROLS + p*0x50`: kind (0 keyboard), then 7 key codes.
 pub const CONTROLS: u32 = 0x44fb20;
 
+impl Obj {
+    pub(crate) fn shift_keys(&mut self) {
+        self.set_prev_up(self.up());
+        self.set_prev_down(self.down());
+        self.set_prev_left(self.left());
+        self.set_prev_right(self.right());
+        self.set_prev_attack(self.attack());
+        self.set_prev_jump(self.jump());
+        self.set_prev_defend(self.defend());
+    }
+}
+
 pub struct World {
     pub g: Globals,
     pub objs: Vec<Obj>,
     pub gd: Arc<GameData>,
-    /// Sections of the original that ran into code not yet ported (see `tick.rs`).
     pub unported_hits: Vec<&'static str>,
-    /// The text of data\\control.txt as the game would read it now (`save_controls`
-    /// replaces it; Cancel reads it back).
     pub control_txt: Option<Vec<u8>>,
     /// Leave out the advertisements (the ad switch and the ad question on the title
     /// screen); a deliberate difference from the original, off in the traces. The
     /// ad banners themselves are not drawn when no ads are loaded (`new_title` with
     /// `ads` None).
     pub ads_removed: bool,
-    /// Network game: the packet the next frame that reads keys takes as the one
-    /// received (see `rollback.rs`, which fills it with every computer's inputs).
     pub net_in: [u8; crate::net::PACKET],
-    /// Network game: what the network screens show (see `menu::net_menu`).
     pub net_ui: crate::net::NetUi,
-    /// The platform's local time (year, month, day, hour, minute, second), for the
-    /// names of recordings (GetLocalTime).
     pub local_time: [u16; 6],
-    /// Sounds requested in the last frame (for the audio layer).
     pub sounds: Vec<crate::sound::SoundEvent>,
     /// Wave files played directly with `play_buffer` (0x401a30) in the last frame, at
     /// full volume and centred, such as `data\\m_end.wav`.
     pub buffer_sounds: Vec<&'static str>,
     /// Stage mode: the counter blocks of the current phase's spawn slots.
     pub spawn_rt: Vec<crate::stage::SpawnRt>,
-    /// What the last frame drew outside the match renderer (menus, texts).
     pub draw: Vec<crate::draw::Draw>,
     /// Milliseconds from the platform clock (`timeGetTime`); only used for cosmetic
     /// choices such as which menu background to show.
     pub time_ms: u32,
     /// The `MENU_BACKn` loaded by `load_menu_background` (0x423840).
     pub menu_back: i32,
-    /// Things the last frame asked the platform to do (open a file dialog, quit).
     pub requests: Vec<crate::menu::main_menu::MenuRequest>,
-    /// Music changes of the last frame: Some(file) to play, None to stop.
     pub music: Vec<Option<Vec<u8>>>,
-    /// The recording being written (see `replay.rs`).
     pub recording: Option<Vec<u8>>,
-    /// The recording being played.
     pub replay: Option<Vec<u8>>,
     /// This frame's keys as recorded (`local_210` of 0x41bc90): 8 players, 2 F-key bytes.
     pub rec_frame: [u8; 10],
@@ -156,7 +154,6 @@ impl World {
         self.music.push(None);
     }
 
-    /// Set the key array as the window procedure would during the frame.
     pub fn set_keys(&mut self, keys: &[u8; 256]) {
         self.g.m.bytes[(KEYS - crate::fields::GLOBALS_BASE) as usize..][..256].copy_from_slice(keys);
     }

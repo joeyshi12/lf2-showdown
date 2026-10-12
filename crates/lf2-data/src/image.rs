@@ -1,6 +1,4 @@
-//! Images: Windows BMP files (the sprites and backgrounds are 8-bit RLE8) and the
-//! bitmap resources inside lf2.exe.
-
+//! BMP and PE bitmap-resource decoding.
 /// An image as 0x00RRGGBB pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Image {

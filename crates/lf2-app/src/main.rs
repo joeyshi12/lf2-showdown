@@ -1,26 +1,7 @@
-//! lf2: play Little Fighter 2 v2.0a with the Rust simulation.
+//! Desktop game. Alt+Enter toggles full screen.
 //!
-//! usage: lf2 [--game DIR] [--p1 NAME --p2 NAME] [--bg N] [--seed N]
-//!            [--fps 60|30] [--fullscreen] [--dump FRAMES OUT.ppm]
-//!
-//! The game folder (the one with data/, sprite/, bg/) comes from --game, LF2_DIR, or
-//! else is the folder this program is in. What the game needs from the original
-//! lf2.exe is built into the program (build.rs), so this program can replace it. The game starts at the title screen; with --p1 and --p2 it starts a VS match
-//! between two human players straight away. Keys come from data/control.txt (default:
-//! player 1 W A S D J K L, player 2 arrows, Enter, Shift, Ctrl). F1 pauses, F2 steps
-//! one frame, F4 leaves, F5 toggles speed, F6-F9 are the original's cheats.
-//!
-//! The simulation runs one tick every 33 ms, as the original. By default (--fps 60)
-//! two pictures are shown per tick, one tick behind the simulation: tick N's picture,
-//! then tick N's picture with the objects and the camera halfway to their positions in
-//! tick N+1. --fps 30 shows one picture per tick, as the original, without the delay.
-//!
-//! The window opens at the picture's size times the whole part of the display scaling,
-//! and can be resized; the picture is scaled to fit it without blurring (window.rs).
-//! Alt+Enter toggles full screen, and --fullscreen starts in it.
-//!
-//! --dump runs FRAMES frames with no keys and no window, writes the last picture as a
-//! PPM file and exits (for comparing pictures with the original).
+//! `lf2 [--game DIR] [--p1 NAME --p2 NAME] [--bg N] [--seed N] [--fps 60|30]
+//!      [--fullscreen] [--dump FRAMES OUT.ppm]`
 
 use lf2_app::{assets, audio, platform, render, window::Display};
 
@@ -76,7 +57,6 @@ fn open_recording(world: &mut World, dir: &std::path::Path, exe: &[u8]) {
     }
 }
 
-/// A Little Fighter 2 folder: it has data\\data.txt.
 fn is_game_dir(d: &std::path::Path) -> bool {
     lf2_data::resolve(d, b"data\\data.txt").is_file()
 }
@@ -119,7 +99,6 @@ fn main() {
             other => panic!("unknown argument {}", other),
         }
     }
-    // without --game or LF2_DIR: the folder this program is in, then the current folder
     let dir = dir
         .or_else(|| {
             let here = std::env::current_exe().ok()?.parent()?.to_path_buf();
@@ -158,8 +137,6 @@ fn main() {
     };
     let file_controls = lf2_data::controls::load(&dir).unwrap_or_default();
     let start = std::time::Instant::now();
-    // the advertisements are left out: none are loaded, and the title screen's ad
-    // switch and ad question are not shown
     let boot = || {
         let mut w = World::new_title(gd.clone(), &exe, &file_controls, None, seed);
         w.ads_removed = true;
@@ -192,15 +169,11 @@ fn main() {
     let mut warned = 0;
     let mut mouse_was_down = false;
     let mut net = lf2_app::net::Net::default();
-    // Key events since the window's last update, given to the key array at the
-    // start of the next frame.
     let mut events: Vec<(u8, bool)> = Vec::new();
     let take_events = |window: &mut Display, events: &mut Vec<(u8, bool)>| {
         window.pump();
         window.take_keys(events);
     };
-    // The key events as the window procedure (lf2_sim::input) writes them: 'd'/'u',
-    // plus the typed words "lf2.net" and "herofighter.com" (keys 0xf9 and 0xf8).
     let apply_events = |events: &mut Vec<(u8, bool)>, keys: &mut [u8; 256], g: &mut lf2_sim::fields::Globals| {
         let kb = lf2_sim::world::KEYS;
         for (i, &k) in keys.iter().enumerate() {
@@ -223,7 +196,6 @@ fn main() {
         let over = quick && (world.g.match_phase() != 0 || world.g.end_timer() > 0x15d);
         net.pump(&mut world);
         {
-            // Ctrl+V pastes a room code on the client screen
             if window.ctrl_down() && events.contains(&(b'V', true)) {
                 if let Some(text) = platform::clipboard_text() {
                     lf2_sim::menu::net_menu::paste_room_code(&mut world, &text);
@@ -259,7 +231,6 @@ fn main() {
                     tween.before_tick(&world);
                 }
                 if net.in_game() {
-                    // rollback: no frame, one, or two (NetSession::advance)
                     net.advance(&mut world, &mut keys);
                 } else {
                     world.set_keys(&keys);
@@ -349,7 +320,6 @@ fn main() {
                 std::thread::sleep(half - now);
             }
             take_events(&mut window, &mut events);
-            // the cursor follows the mouse on this picture too
             if let Some((mx, my)) = window.mouse() {
                 frame.cursor = Some((mx, my));
             }

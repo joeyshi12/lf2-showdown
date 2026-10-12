@@ -1,13 +1,7 @@
-//! The network game's links: WebRTC data channels set up through an icebreaker
-//! rendezvous server (https://github.com/joeyshi12/icebreaker). The host reserves a
-//! room and gets a four-character code; each joiner (up to three) sends an offer with
-//! the code, and the host answers it. After that the server is out of the way and
-//! the messages of lf2_sim::net::NetSession go peer to peer over UDP, joiners to the
-//! host and back.
-//!
-//! Candidates are not trickled (icebreaker passes only the offer and the answer), so
-//! both SDPs carry them: the host candidate of the UDP socket and the server-reflexive
-//! one a STUN server reports for it.
+//! WebRTC links set up through icebreaker. Joiners connect only to the host.
+//! `new_rtc` gathers host and server-reflexive candidates before creating an SDP;
+//! icebreaker does not support trickling. str0m handles ICE, DTLS and SCTP; this
+//! module owns the UDP sockets.
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -19,7 +13,6 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
-/// The rendezvous server, overridable with LF2_RENDEZVOUS.
 pub const DEFAULT_URL: &str = "wss://rv.lf2-showdown.online/ws?app=lf2-showdown";
 const DEFAULT_STUN: &str = "stun.l.google.com:19302";
 
@@ -27,23 +20,17 @@ pub fn rendezvous_url() -> String {
     std::env::var("LF2_RENDEZVOUS").unwrap_or_else(|_| DEFAULT_URL.into())
 }
 
-/// What the links report. Peers are numbered as NetSession expects: the host's
-/// joiners from 1 in the order they came, a joiner's host 0.
+/// The host numbers joiners from 1 in arrival order; a joiner calls the host 0.
 #[derive(Debug)]
 pub enum LinkEvent {
-    /// Host: the room code to give the other players.
     Code(String),
-    /// A data channel is open.
     Connected(u32),
-    /// A message from a peer.
     Data(u32, Vec<u8>),
     /// A link failed or closed, with a message for the player. `None`: all of them
     /// (the rendezvous server could not be reached, or the room closed).
     Closed(Option<u32>, String),
 }
 
-/// The game side of the links: send messages, poll events. The links run on their
-/// own thread.
 pub struct Link {
     tx: Sender<(u32, Vec<u8>)>,
     rx: Receiver<LinkEvent>,
@@ -109,7 +96,6 @@ fn ws_send(ws: &mut Ws, v: serde_json::Value) -> Result<(), String> {
     ws.send(Message::Text(v.to_string().into())).map_err(|e| format!("rendezvous server: {}", e))
 }
 
-/// The next JSON message, None on a read timeout.
 fn ws_recv(ws: &mut Ws) -> Result<Option<serde_json::Value>, String> {
     match ws.read() {
         Ok(Message::Text(t)) => serde_json::from_str(t.as_str()).map(Some).map_err(|e| e.to_string()),
@@ -120,7 +106,6 @@ fn ws_recv(ws: &mut Ws) -> Result<Option<serde_json::Value>, String> {
     }
 }
 
-/// Wait for a message of one of these types; an "error" message fails.
 fn ws_wait(ws: &mut Ws, types: &[&str], timeout: Duration) -> Result<serde_json::Value, String> {
     let end = Instant::now() + timeout;
     while Instant::now() < end {
@@ -144,7 +129,6 @@ fn ws_wait(ws: &mut Ws, types: &[&str], timeout: Duration) -> Result<serde_json:
     Err("the rendezvous server did not answer".into())
 }
 
-/// The STUN servers of an ice_servers list, as host:port.
 fn stun_servers(ice: &serde_json::Value) -> Vec<String> {
     let mut out = Vec::new();
     for s in ice.as_array().into_iter().flatten() {
@@ -245,7 +229,6 @@ fn new_rtc(stun: &[String]) -> Result<(UdpSocket, SocketAddr, Rtc), String> {
 const RELIABLE: &str = "lf2";
 const FAST: &str = "lf2-fast";
 
-/// The unordered channel without resending (see lf2_sim::net::is_unreliable).
 fn fast_config() -> ChannelConfig {
     ChannelConfig { label: FAST.into(), ordered: false, reliability: Reliability::MaxRetransmits { retransmits: 0 }, ..Default::default() }
 }
@@ -257,7 +240,6 @@ fn test_drop() -> u32 {
     std::env::var("LF2_TEST_DROP").ok().and_then(|s| s.parse().ok()).unwrap_or(0)
 }
 
-/// One link's connection: its UDP socket, its Rtc and its two data channels.
 struct Conn {
     peer: u32,
     sock: UdpSocket,
@@ -265,7 +247,6 @@ struct Conn {
     rtc: Rtc,
     reliable: Option<ChannelId>,
     fast: Option<ChannelId>,
-    /// The reliable channel is open.
     open: bool,
     fast_open: bool,
     pending: std::collections::VecDeque<Vec<u8>>,
@@ -323,8 +304,6 @@ impl Conn {
         self.rng % 100 < self.drop_percent as u64
     }
 
-    /// Move the connection on: queued messages out, UDP in and out, events to the
-    /// game. Err when it closed.
     fn poll(&mut self, ev: &Sender<LinkEvent>) -> Result<(), String> {
         if self.open {
             if let Some(mut ch) = self.reliable.and_then(|c| self.rtc.channel(c)) {
@@ -407,8 +386,6 @@ impl Conn {
     }
 }
 
-/// Queue the game's messages on their connections. False when the game dropped
-/// the link.
 fn take_outgoing(out: &Receiver<(u32, Vec<u8>)>, conns: &mut [Conn]) -> bool {
     loop {
         match out.try_recv() {
@@ -423,7 +400,6 @@ fn take_outgoing(out: &Receiver<(u32, Vec<u8>)>, conns: &mut [Conn]) -> bool {
     }
 }
 
-/// Poll every connection; drop the ones that closed, with a Closed event.
 fn poll_all(conns: &mut Vec<Conn>, ev: &Sender<LinkEvent>) {
     conns.retain_mut(|c| match c.poll(ev) {
         Ok(()) => true,

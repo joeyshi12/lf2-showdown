@@ -32,11 +32,9 @@ struct Peer {
     w: World,
     s: NetSession,
     keys: [u8; 256],
-    /// Frames of the platform's clock since the game started.
     ticks: u32,
 }
 
-/// A message on its way: arrival time, sender (peer index), receiver, bytes.
 struct InFlight {
     at: u64,
     from: usize,
@@ -65,8 +63,6 @@ impl Lan {
         if n == 0 { 0 } else { self.rng % n }
     }
 
-    /// The peer id a computer uses for another: the host numbers its joiners
-    /// 1..3, a joiner calls the host 0.
     fn peer_id(&self, me: usize, other: usize) -> u32 {
         if me == 0 { other as u32 } else { 0 }
     }
@@ -101,7 +97,6 @@ impl Lan {
         }
     }
 
-    /// One 33 ms frame of every computer's clock.
     fn tick(&mut self) {
         self.now += 33;
         self.deliver();
@@ -157,9 +152,6 @@ fn name_at(w: &World, s: usize) -> [u8; 11] {
     std::array::from_fn(|k| w.g.m.u8(0x44fcc0 + 11 * s as u32 + k as u32))
 }
 
-/// The keys computer `i` holds, by its own frame count since the game started:
-/// through the menus with taps far enough apart for the slowest profile, then a
-/// fight in which each player walks to the nearest other one and attacks.
 fn script(i: usize, p: &mut Peer) {
     let t = p.ticks;
     let mut down: Vec<usize> = Vec::new();
@@ -227,7 +219,6 @@ fn run(p: Profile) {
         peers.push(Peer { w, s, keys: [b'u'; 256], ticks: 0 });
     }
     let mut lan = Lan { ordered: vec![vec![0; n]; n], p, peers, flight: Vec::new(), now: 0, rng: 0x9e3779b97f4a7c15, start: None };
-    // the title screens: "network game", then server or client
     for (i, peer) in lan.peers.iter_mut().enumerate() {
         for _ in 0..5 {
             peer.w.step();
@@ -249,7 +240,6 @@ fn run(p: Profile) {
         lan.tick();
     }
     assert_eq!(lan.peers[0].w.net_ui.players.len(), n, "the host lists every computer");
-    // the host presses Enter
     lan.peers[0].keys[0x0d] = b'd';
     for _ in 0..3 {
         lan.tick();
@@ -262,7 +252,6 @@ fn run(p: Profile) {
         assert!(peer.s.in_game(), "computer {} is in the game", i);
         assert!(peer.w.g.m.i32(GAME) >= 1);
     }
-    // the menus and a fight
     let mut fought = false;
     for _ in 0..1500 {
         lan.tick();
@@ -272,7 +261,6 @@ fn run(p: Profile) {
     assert!(fought, "the match ran with every computer's fighter");
     let readout = lan.peers[1].w.draw.iter().any(|d| matches!(d, lf2_sim::draw::Draw::Label { text, .. } if String::from_utf8_lossy(text).contains("ms  rollback")));
     assert!(readout, "the game shows the round-trip time and rollback readout");
-    // stop pressing keys and let every computer's inputs arrive
     let target = lan.peers.iter().map(|p| p.s.rollback().unwrap().frame()).max().unwrap() + 4;
     for _ in 0..200 {
         lan.now += 33;
@@ -299,7 +287,6 @@ fn run(p: Profile) {
         assert_eq!(rb.frame(), target, "computer {} reached the frame", i);
         assert!(rb.confirmed() >= target, "computer {} has every input", i);
     }
-    // the same inputs once, without rollback, from the host's state at the start
     let (state, names, table) = lan.start.take().unwrap();
     let rb0 = lan.peers[0].s.rollback().unwrap();
     let inputs: Vec<Vec<Input>> = (0..n).map(|s| (0..target).map(|f| rb0.input(s, f)).collect()).collect();

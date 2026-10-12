@@ -101,40 +101,30 @@ impl<'a> Scanner<'a> {
         Some(v as i32)
     }
 
+    fn digits(&mut self, out: &mut String) -> usize {
+        let start = self.pos;
+        while let Some(c) = self.peek().filter(u8::is_ascii_digit) {
+            out.push(c as char);
+            self.pos += 1;
+        }
+        self.pos - start
+    }
+
     /// `fscanf(f, "%lf", &v)`.
     pub fn float(&mut self) -> Option<f64> {
         self.skip_space();
-        let start = self.pos;
         let mut s = String::new();
         if let Some(c @ (b'-' | b'+')) = self.peek() {
             s.push(c as char);
             self.pos += 1;
         }
-        let mut digits = 0;
-        while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
-                s.push(c as char);
-                digits += 1;
-                self.pos += 1;
-            } else {
-                break;
-            }
-        }
+        let mut digits = self.digits(&mut s);
         if self.peek() == Some(b'.') {
             s.push('.');
             self.pos += 1;
-            while let Some(c) = self.peek() {
-                if c.is_ascii_digit() {
-                    s.push(c as char);
-                    digits += 1;
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
+            digits += self.digits(&mut s);
         }
         if digits == 0 {
-            let _ = start;
             return None;
         }
         if let Some(b'e' | b'E') = self.peek() {
@@ -145,16 +135,7 @@ impl<'a> Scanner<'a> {
                 e.push(c as char);
                 self.pos += 1;
             }
-            let mut ed = 0;
-            while let Some(c) = self.peek() {
-                if c.is_ascii_digit() {
-                    e.push(c as char);
-                    ed += 1;
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
+            let ed = self.digits(&mut e);
             if ed > 0 {
                 s.push_str(&e);
             } else {
