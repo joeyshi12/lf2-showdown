@@ -14,6 +14,8 @@ pub mod ogg;
 #[cfg(feature = "native")]
 pub mod platform;
 #[cfg(feature = "native")]
+pub mod window;
+#[cfg(feature = "native")]
 pub mod net;
 #[cfg(feature = "native")]
 pub mod rtc;

@@ -11,7 +11,8 @@ the programs at it with `LF2_DIR=$PWD/game`.
 ## Play
 
 - Desktop: `cargo run --release -p lf2-app`. Or copy the built program into the game
-  folder and run it there.
+  folder and run it there. Alt+Enter switches between a window and full screen;
+  `--fullscreen` starts full screen. The window can be resized.
 - Browser: see "Web" below.
 - Music: `game/bgm/` has the music as Ogg. For another copy of the game, run
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The

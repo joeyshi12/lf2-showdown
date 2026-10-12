@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # alsa for cpal, x11 and wayland for minifb, fonts-wine for the System font
+      # alsa for cpal, X11 and Wayland for winit and softbuffer, fonts-wine for the System font
       # (/usr/share/wine/fonts/vgasys.fon) that build.rs puts into the program
       - name: install packages
         run: |

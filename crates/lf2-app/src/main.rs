@@ -1,7 +1,7 @@
 //! lf2: play Little Fighter 2 v2.0a with the Rust simulation.
 //!
 //! usage: lf2 [--game DIR] [--p1 NAME --p2 NAME] [--bg N] [--seed N]
-//!            [--fps 60|30] [--dump FRAMES OUT.ppm]
+//!            [--fps 60|30] [--fullscreen] [--dump FRAMES OUT.ppm]
 //!
 //! The game folder (the one with data/, sprite/, bg/) comes from --game, LF2_DIR, or
 //! else is the folder this program is in. What the game needs from the original
@@ -15,109 +15,19 @@
 //! then tick N's picture with the objects and the camera halfway to their positions in
 //! tick N+1. --fps 30 shows one picture per tick, as the original, without the delay.
 //!
-//! On Windows the window is scaled by a whole number (1, 2 or 4) chosen from the
-//! display scaling, and the program tells Windows it handles the scaling itself, so
-//! Windows does not stretch the picture by 125% or 150% and blur it.
+//! The window opens at the picture's size times the whole part of the display scaling,
+//! and can be resized; the picture is scaled to fit it without blurring (window.rs).
+//! Alt+Enter toggles full screen, and --fullscreen starts in it.
 //!
 //! --dump runs FRAMES frames with no keys and no window, writes the last picture as a
 //! PPM file and exits (for comparing pictures with the original).
 
-use lf2_app::{assets, audio, platform, render};
+use lf2_app::{assets, audio, platform, render, window::Display};
 
 use lf2_sim::setup::{Fighter, VsSetup, DEFAULT_CONTROLS};
 use lf2_sim::World;
-use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-/// The Windows virtual-key code that the original's window procedure (0x43b3d0) gets
-/// in WM_KEYDOWN/WM_KEYUP for a key; None for keys it never gets there. Both Shift keys
-/// are VK_SHIFT (0x10) and both Ctrl keys VK_CONTROL (0x11), as in wParam. Alt and F10
-/// come as WM_SYSKEYDOWN/WM_SYSKEYUP, which the original does not write into the key
-/// array, so they have no code here. The keypad keys are the NumLock-on codes (minifb
-/// does not report the NumLock state).
-fn vk(k: Key) -> Option<u8> {
-    use Key::*;
-    Some(match k {
-        A => 0x41, B => 0x42, C => 0x43, D => 0x44, E => 0x45, F => 0x46, G => 0x47, H => 0x48,
-        I => 0x49, J => 0x4a, K => 0x4b, L => 0x4c, M => 0x4d, N => 0x4e, O => 0x4f, P => 0x50,
-        Q => 0x51, R => 0x52, S => 0x53, T => 0x54, U => 0x55, V => 0x56, W => 0x57, X => 0x58,
-        Y => 0x59, Z => 0x5a,
-        Key0 => 0x30, Key1 => 0x31, Key2 => 0x32, Key3 => 0x33, Key4 => 0x34, Key5 => 0x35,
-        Key6 => 0x36, Key7 => 0x37, Key8 => 0x38, Key9 => 0x39,
-        NumPad0 => 0x60, NumPad1 => 0x61, NumPad2 => 0x62, NumPad3 => 0x63, NumPad4 => 0x64,
-        NumPad5 => 0x65, NumPad6 => 0x66, NumPad7 => 0x67, NumPad8 => 0x68, NumPad9 => 0x69,
-        NumPadAsterisk => 0x6a, NumPadPlus => 0x6b, NumPadMinus => 0x6d, NumPadDot => 0x6e,
-        NumPadSlash => 0x6f,
-        Left => 0x25, Up => 0x26, Right => 0x27, Down => 0x28,
-        Enter | NumPadEnter => 0x0d, Space => 0x20, Tab => 0x09, Escape => 0x1b, Backspace => 0x08,
-        LeftShift | RightShift => 0x10, LeftCtrl | RightCtrl => 0x11,
-        Pause => 0x13, CapsLock => 0x14, NumLock => 0x90, ScrollLock => 0x91,
-        LeftSuper => 0x5b, RightSuper => 0x5c, Menu => 0x5d,
-        Backquote => 0xc0, Comma => 0xbc, Period => 0xbe, Slash => 0xbf, Semicolon => 0xba,
-        Apostrophe => 0xde, LeftBracket => 0xdb, RightBracket => 0xdd, Backslash => 0xdc,
-        Minus => 0xbd, Equal => 0xbb,
-        F1 => 0x70, F2 => 0x71, F3 => 0x72, F4 => 0x73, F5 => 0x74, F6 => 0x75, F7 => 0x76,
-        F8 => 0x77, F9 => 0x78, F11 => 0x7a, F12 => 0x7b, F13 => 0x7c, F14 => 0x7d, F15 => 0x7e,
-        Insert => 0x2d, Delete => 0x2e, Home => 0x24, End => 0x23, PageUp => 0x21, PageDown => 0x22,
-        _ => return None,
-    })
-}
-
-#[cfg(test)]
-mod vk_tests {
-    use super::vk;
-    use minifb::Key;
-
-    /// Every key the game reads directly: Enter, Shift, the arrows (replay camera), G
-    /// (the title screen), F1-F9, F11, F12, and the keys of the default control.txt.
-    #[test]
-    fn keys_the_game_reads_have_codes() {
-        let pairs = [
-            (Key::Enter, 0x0d), (Key::LeftShift, 0x10), (Key::RightShift, 0x10), (Key::LeftCtrl, 0x11),
-            (Key::RightCtrl, 0x11), (Key::Left, 0x25), (Key::Up, 0x26), (Key::Right, 0x27), (Key::Down, 0x28),
-            (Key::G, 0x47), (Key::F1, 0x70), (Key::F2, 0x71), (Key::F3, 0x72), (Key::F4, 0x73), (Key::F5, 0x74),
-            (Key::F6, 0x75), (Key::F7, 0x76), (Key::F8, 0x77), (Key::F9, 0x78), (Key::F11, 0x7a), (Key::F12, 0x7b),
-            (Key::Escape, 0x1b), (Key::Tab, 0x09), (Key::Space, 0x20), (Key::Backquote, 0xc0),
-            (Key::Comma, 0xbc), (Key::Period, 0xbe), (Key::Backspace, 0x08),
-        ];
-        for (k, code) in pairs {
-            assert_eq!(vk(k), Some(code), "{:?}", k);
-        }
-        for p in lf2_sim::setup::DEFAULT_CONTROLS {
-            for code in p {
-                let found = (0..Key::Count as u8)
-                    .map(|i| unsafe { std::mem::transmute::<u8, Key>(i) })
-                    .any(|k| vk(k) == Some(code as u8));
-                assert!(found, "no key gives the control.txt code {}", code);
-            }
-        }
-    }
-
-    /// Alt and F10 arrive as WM_SYSKEYDOWN, which the original ignores.
-    #[test]
-    fn alt_and_f10_are_not_keys_of_the_game() {
-        for k in [Key::LeftAlt, Key::RightAlt, Key::F10, Key::Unknown] {
-            assert_eq!(vk(k), None, "{:?}", k);
-        }
-    }
-
-    /// No two different keys share a code, except the left and right Shift and Ctrl
-    /// keys and the two Enter keys, which Windows does not tell apart in wParam either.
-    #[test]
-    fn codes_are_unique() {
-        let shared = [0x10u8, 0x11, 0x0d];
-        let mut seen = std::collections::HashMap::new();
-        for i in 0..Key::Count as u8 {
-            let k: Key = unsafe { std::mem::transmute(i) };
-            if let Some(c) = vk(k) {
-                if let Some(other) = seen.insert(c, k) {
-                    assert!(shared.contains(&c), "{:?} and {:?} both give {:#x}", other, k, c);
-                }
-            }
-        }
-    }
-}
 
 /// data/control.txt: four lines of "kind up down left right attack jump defend ...",
 /// then the four player names (`` ` `` stands for a space).
@@ -166,23 +76,6 @@ fn open_recording(world: &mut World, dir: &std::path::Path, exe: &[u8]) {
     }
 }
 
-/// The window's scale. On Windows: declare the program DPI-aware, so that Windows does
-/// not stretch the window by the display scaling (125%, 150%, ...) with smoothing,
-/// and scale by the largest whole factor not above it instead. Elsewhere 1.
-fn window_scale() -> minifb::Scale {
-    #[cfg(windows)]
-    unsafe {
-        windows_sys::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
-        match windows_sys::Win32::UI::HiDpi::GetDpiForSystem() / 96 {
-            0 | 1 => minifb::Scale::X1,
-            2 | 3 => minifb::Scale::X2,
-            _ => minifb::Scale::X4,
-        }
-    }
-    #[cfg(not(windows))]
-    minifb::Scale::X1
-}
-
 /// A Little Fighter 2 folder: it has data\\data.txt.
 fn is_game_dir(d: &std::path::Path) -> bool {
     lf2_data::resolve(d, b"data\\data.txt").is_file()
@@ -198,6 +91,7 @@ fn main() {
     let (mut p1, mut p2, mut bg, mut seed) = (None::<String>, None::<String>, None, None);
     let mut dump: Option<(u32, String)> = None;
     let mut fps = 60;
+    let mut fullscreen = false;
     let mut tween = render::Tween::new();
     while let Some(a) = args.next() {
         let mut val = || args.next().unwrap_or_else(|| panic!("{} needs a value", a));
@@ -213,12 +107,13 @@ fn main() {
                     panic!("--fps is 60 or 30");
                 }
             }
+            "--fullscreen" => fullscreen = true,
             "--dump" => {
                 let n = val().parse().expect("frames");
                 dump = Some((n, val()));
             }
             "-h" | "--help" => {
-                println!("usage: lf2 [--game DIR] [--p1 NAME] [--p2 NAME] [--bg N] [--seed N] [--fps 60|30] [--dump FRAMES OUT.ppm]");
+                println!("usage: lf2 [--game DIR] [--p1 NAME] [--p2 NAME] [--bg N] [--seed N] [--fps 60|30] [--fullscreen] [--dump FRAMES OUT.ppm]");
                 return;
             }
             other => panic!("unknown argument {}", other),
@@ -291,9 +186,7 @@ fn main() {
         return;
     }
     let mut audio = audio::Audio::new(&gd);
-    let options = WindowOptions { scale: window_scale(), ..WindowOptions::default() };
-    let mut window = Window::new("Little Fighter 2", render::W as usize, render::H as usize, options).expect("window");
-    window.set_target_fps(0);
+    let mut window = Display::new("Little Fighter 2", fullscreen);
     let mut keys = [b'u'; 256];
     let mut next = Instant::now();
     let mut warned = 0;
@@ -302,17 +195,9 @@ fn main() {
     // Key events since the window's last update, given to the key array at the
     // start of the next frame.
     let mut events: Vec<(u8, bool)> = Vec::new();
-    let take_events = |window: &Window, events: &mut Vec<(u8, bool)>| {
-        for k in window.get_keys_pressed(KeyRepeat::Yes) {
-            if let Some(v) = vk(k) {
-                events.push((v, true));
-            }
-        }
-        for k in window.get_keys_released() {
-            if let Some(v) = vk(k) {
-                events.push((v, false));
-            }
-        }
+    let take_events = |window: &mut Display, events: &mut Vec<(u8, bool)>| {
+        window.pump();
+        window.take_keys(events);
     };
     // The key events as the window procedure (lf2_sim::input) writes them: 'd'/'u',
     // plus the typed words "lf2.net" and "herofighter.com" (keys 0xf9 and 0xf8).
@@ -333,25 +218,24 @@ fn main() {
         }
     };
     while window.is_open() {
-        take_events(&window, &mut events);
+        take_events(&mut window, &mut events);
         let mut stepped = false;
         let over = quick && (world.g.match_phase() != 0 || world.g.end_timer() > 0x15d);
         net.pump(&mut world);
         {
             // Ctrl+V pastes a room code on the client screen
-            let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
-            if ctrl && events.contains(&(b'V', true)) {
+            if window.ctrl_down() && events.contains(&(b'V', true)) {
                 if let Some(text) = platform::clipboard_text() {
                     lf2_sim::menu::net_menu::paste_room_code(&mut world, &text);
                 }
             }
             apply_events(&mut events, &mut keys, &mut world.g);
-            if let Some((mx, my)) = window.get_mouse_pos(minifb::MouseMode::Clamp) {
-                world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx as i32);
-                world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_Y, my as i32);
-                frame.cursor = Some((mx as i32, my as i32));
+            if let Some((mx, my)) = window.mouse() {
+                world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx);
+                world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_Y, my);
+                frame.cursor = Some((mx, my));
             }
-            let down = window.get_mouse_down(minifb::MouseButton::Left);
+            let down = window.mouse_down();
             // as the window procedure (0x43b3d0): 1 on button down, 0 on button up
             if down && !mouse_was_down {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_CLICK, 1);
@@ -457,21 +341,21 @@ fn main() {
             renderer.draw_frame(&world, &assets, &mut frame);
         }
         over_text(&mut frame);
-        window.update_with_buffer(&frame.px, render::W as usize, render::H as usize).expect("present");
+        window.present(&frame.px);
         if smooth {
             let half = next + Duration::from_micros(period * 500);
             let now = Instant::now();
             if half > now {
                 std::thread::sleep(half - now);
             }
-            take_events(&window, &mut events);
+            take_events(&mut window, &mut events);
             // the cursor follows the mouse on this picture too
-            if let Some((mx, my)) = window.get_mouse_pos(minifb::MouseMode::Clamp) {
-                frame.cursor = Some((mx as i32, my as i32));
+            if let Some((mx, my)) = window.mouse() {
+                frame.cursor = Some((mx, my));
             }
             renderer.draw_tween(&mut tween, 0.5, false, &assets, &mut frame);
             over_text(&mut frame);
-            window.update_with_buffer(&frame.px, render::W as usize, render::H as usize).expect("present");
+            window.present(&frame.px);
         }
         next += Duration::from_millis(period);
         let now = Instant::now();
