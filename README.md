@@ -1,12 +1,6 @@
 # LF2 Showdown
 
-Little Fighter 2 v2.0a rebuilt in Rust. The game logic matches the original `lf2.exe`
-frame for frame. Private study only.
-
-The game files the port needs are in `game/`: `data/`, `sprite/`, `bg/`, the demo
-recordings, the music as Ogg files, and `lf2_image.bin`, which holds the parts of the
-original `lf2.exe` that the port uses (its starting data and the menu pictures). Point
-the programs at it with `LF2_DIR=$PWD/game`.
+Little Fighter 2 v2.0a rebuilt in Rust. Private study only.
 
 ## Play
 
@@ -18,16 +12,9 @@ the programs at it with `LF2_DIR=$PWD/game`.
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.
 - Network game: up to four computers, one player each. On the title screen choose
-  "network game". The host picks "Host a game" and gets a room code; the others
-  pick "Join a game" and type it. The host presses Enter to start
-  once everyone is listed. Desktop and browser can play each other. Each computer
-  runs ahead with its own input and corrects the game when another computer's
-  input arrives late (rollback), so a slow connection does not slow the game down.
-  The connections are peer to peer (WebRTC), each joiner to the host, and are set up
-  through `wss://rv.lf2-showdown.online/ws?app=lf2-showdown` (change it with
-  `LF2_RENDEZVOUS` on the desktop or `?rendezvous=` on the web page).
+  "network game".
 
-Differences from the original: no ads, no forum link, a smoother 60 pictures a second
+Differences from the original: no ads, no forum link, a smoother 60 fps
 (`--fps 30` for the original's 30), and the network game takes up to four computers
 with rollback and room codes instead of two with lockstep and IP addresses, so it
 cannot play against the original program.
