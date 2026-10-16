@@ -28,6 +28,9 @@ pub struct Game {
     events: Vec<(u8, bool)>,
     tween: render::Tween,
     net: Option<lf2_sim::net::NetSession>,
+    /// The controllers as `set_gamepad` last gave them.
+    pads: [lf2_sim::input::Joystick; lf2_sim::input::JOYSTICK_COUNT],
+    joysticks: lf2_app::gamepad::Joysticks,
 }
 
 impl Game {
@@ -68,6 +71,8 @@ impl Game {
             events: Vec::new(),
             tween: render::Tween::new(),
             net: None,
+            pads: Default::default(),
+            joysticks: Default::default(),
         })
     }
 
@@ -102,6 +107,7 @@ impl Game {
         for (i, k) in self.keys.iter_mut().enumerate() {
             *k = w.g.m.u8(kb + i as u32);
         }
+        self.joysticks.write(&mut w.g, &self.pads);
         w.time_ms = time_ms;
         if local_time.len() >= 6 {
             w.local_time.copy_from_slice(&local_time[..6]);
@@ -136,6 +142,15 @@ impl Game {
             self.to_rgba();
         }
         period
+    }
+
+    /// Controller `n` (0 for joystick 1, 1 for joystick 2) for the next ticks: bits 0
+    /// to 3 up, down, left and right, bits 4 to 7 buttons 0 to 3 (see
+    /// `lf2_app::gamepad`).
+    pub fn set_gamepad(&mut self, n: u32, bits: u32) {
+        let Some(p) = self.pads.get_mut(n as usize) else { return };
+        let b = |k: u32| bits & (1 << k) != 0;
+        *p = lf2_sim::input::Joystick { up: b(0), down: b(1), left: b(2), right: b(3), buttons: std::array::from_fn(|k| b(4 + k as u32)) };
     }
 
     pub fn net_host(&mut self) {

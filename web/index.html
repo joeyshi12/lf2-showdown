@@ -155,6 +155,9 @@
     <p><kbd>F1</kbd> pauses, <kbd>F2</kbd> runs one frame, <kbd>F4</kbd> returns to the
       menu, <kbd>F5</kbd> changes the speed, and <kbd>F11</kbd> and <kbd>F12</kbd> change
       the volume. Click the game first so it gets your key presses and plays sound.</p>
+    <p>Game controllers work too: under control settings, click a player's picture to
+      change the keyboard to joystick 1 or 2 (the first and second controller you
+      connected; press a button on it so the browser lists it).</p>
     <h2>Network play</h2>
     <p>Up to four players can play over the internet, one per computer. On the title
       screen, choose network game. One player chooses Host a game and gets a room code.
@@ -520,6 +523,34 @@ pick.addEventListener("change", async () => {
   canvas.focus();
 });
 
+// Controllers through the Gamepad API, as joysticks 1 and 2 (lf2_app::gamepad):
+// bits 0-3 up, down, left, right from the direction pad or the left stick, bits 4-7
+// the bottom, right, left and top face buttons. The pads are read on every animation
+// frame and what was pressed since the last tick goes to the next one.
+const pads = { since: [0, 0] };
+function padBits(p) {
+  const on = (i) => !!(p.buttons[i] && p.buttons[i].pressed);
+  const [x, y] = [p.axes[0] || 0, p.axes[1] || 0];
+  const dpad = p.mapping === "standard";
+  let b = 0;
+  if (y < -0.5 || (dpad && on(12))) b |= 1;
+  if (y > 0.5 || (dpad && on(13))) b |= 2;
+  if (x < -0.5 || (dpad && on(14))) b |= 4;
+  if (x > 0.5 || (dpad && on(15))) b |= 8;
+  for (let k = 0; k < 4; k++) if (on(k)) b |= 16 << k;
+  return b;
+}
+function readPads() {
+  const list = navigator.getGamepads ? [...navigator.getGamepads()].filter((p) => p && p.connected) : [];
+  return [0, 1].map((n) => (list[n] ? padBits(list[n]) : 0));
+}
+function latchPads() {
+  readPads().forEach((b, n) => { pads.since[n] |= b; });
+}
+function sendPads() {
+  readPads().forEach((b, n) => { game.set_gamepad(n, b | pads.since[n]); pads.since[n] = 0; });
+}
+
 const start = performance.now();
 const image = ctx.createImageData(794, 550);
 // Ticks are 33 ms, or 3 ms in F5 fast mode. Smooth pictures run one tick behind;
@@ -528,6 +559,7 @@ function run() {
   let next = performance.now(), period = 0x21, tickAt = next, first = true;
   let count = { pictures: 0, ticks: 0, frames: 0 }, countStart = next;
   const tick = () => {
+    sendPads();
     const d = new Date();
     const p = game.step(smoothNow(), mouse.x, mouse.y, mouse.down, Math.floor(performance.now() - start),
       new Uint16Array([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]));
@@ -579,6 +611,7 @@ function run() {
     count.pictures++;
   };
   const frame = (now) => {
+    latchPads();
     count.frames++;
     if (now - countStart >= 1000) {
       const s = (now - countStart) / 1000;

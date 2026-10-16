@@ -1,6 +1,7 @@
 //! Desktop and Android rendering, audio, window, touch controls and network support.
 pub mod assets;
 pub mod exe_image;
+pub mod gamepad;
 #[cfg(windows)]
 pub mod gdi_text;
 #[cfg(all(windows, feature = "native"))]

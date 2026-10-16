@@ -9,6 +9,41 @@
 use crate::fields::Globals;
 use crate::world::KEYS;
 
+/// The joysticks' state, which the original's `joystick_init` (0x43bf10) and window
+/// procedure keep: 0x30 bytes per joystick, up, down, right and left, then the
+/// buttons. 1 is pressed. A player whose input kind in the control settings is 1 or
+/// 2 uses joystick 1 or 2.
+pub const JOYSTICKS: u32 = 0x453ff0;
+/// The joysticks the control settings offer.
+pub const JOYSTICK_COUNT: usize = 2;
+/// The buttons the control settings take for attack, jump and defend.
+pub const JOYSTICK_BUTTONS: usize = 4;
+
+/// One joystick's state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Joystick {
+    pub up: bool,
+    pub down: bool,
+    pub left: bool,
+    pub right: bool,
+    pub buttons: [bool; JOYSTICK_BUTTONS],
+}
+
+/// Write joystick `n` (0 or 1) into the joysticks' state.
+pub fn set_joystick(g: &mut Globals, n: usize, j: &Joystick) {
+    let at = JOYSTICKS + 0x30 * n as u32;
+    for (k, down) in [j.up, j.down, j.right, j.left].into_iter().chain(j.buttons).enumerate() {
+        g.m.set_u8(at + k as u32, down as u8);
+    }
+}
+
+/// Joystick `n` as `set_joystick` wrote it.
+pub fn joystick(g: &Globals, n: usize) -> Joystick {
+    let at = JOYSTICKS + 0x30 * n as u32;
+    let b = |k: u32| g.m.u8(at + k) != 0;
+    Joystick { up: b(0), down: b(1), right: b(2), left: b(3), buttons: std::array::from_fn(|k| b(4 + k as u32)) }
+}
+
 /// State of the "lf2.net" detector (`DAT_0045857c`).
 pub const WORD_LF2NET: u32 = 0x45857c;
 /// State of the "herofighter.com" detector (`DAT_00458578`).
@@ -81,6 +116,21 @@ mod tests {
             key_down(g, c);
             key_up(g, c);
         }
+    }
+
+    /// The bytes 0x419a60 reads in a match (up, down, then right before left) and the
+    /// ones the control settings read for a button (0x453fc4 + kind * 0x30 + n).
+    #[test]
+    fn set_joystick_writes_the_bytes_the_game_reads() {
+        let mut g = fresh();
+        let j = Joystick { right: true, buttons: [false, true, false, false], ..Default::default() };
+        set_joystick(&mut g, 1, &j);
+        let at = JOYSTICKS + 0x30;
+        assert_eq!((0..8).map(|k| g.m.u8(at + k)).collect::<Vec<_>>(), [0, 0, 1, 0, 0, 1, 0, 0]);
+        assert_eq!(g.m.u8(0x453fc4 + 2 * 0x30 + 1), 1, "button 1 of joystick 2 for the control settings");
+        set_joystick(&mut g, 0, &Joystick { left: true, ..Default::default() });
+        assert_eq!(g.m.u8(JOYSTICKS + 3), 1);
+        assert_eq!(joystick(&g, 1), j);
     }
 
     #[test]

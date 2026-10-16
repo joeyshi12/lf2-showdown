@@ -150,6 +150,8 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
     let mut warned = 0;
     let mut mouse_was_down = false;
     let mut net = crate::net::Net::default();
+    let mut controllers = crate::gamepad::Controllers::new();
+    let mut joysticks = crate::gamepad::Joysticks::default();
     let mut events: Vec<(u8, bool)> = Vec::new();
     let take_events = |window: &mut Display, events: &mut Vec<(u8, bool)>| {
         window.pump();
@@ -197,6 +199,7 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
                 }
             }
             apply_events(&mut events, &mut keys, &mut world.g);
+            joysticks.write(&mut world.g, &controllers.poll());
             if let Some((mx, my)) = window.mouse() {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx);
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_Y, my);
