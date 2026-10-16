@@ -194,16 +194,30 @@ impl World {
     }
 }
 
-/// This computer's input for one frame from the platform's key array, as player 1
-/// (control settings) presses it. F-keys pressed are consumed (written back as 'u'),
-/// as the original's frame does.
+/// This computer's input for one frame from the platform's key array, or from a
+/// joystick when player 1's input kind in the control settings is 1 or 2, as player
+/// 1 presses it. F-keys pressed are consumed (written back as 'u'), as the
+/// original's frame does.
 pub fn local_input(w: &World, keys: &mut [u8; 256]) -> Input {
     let base = crate::world::CONTROLS + 0x50;
+    let bits = [0x80u8, 0x40, 0x20, 0x10, 8, 4, 2];
     let mut b = 0u8;
-    if w.g.m.i32(base) == 0 {
-        for (k, bit) in [0x80u8, 0x40, 0x20, 0x10, 8, 4, 2].iter().enumerate() {
+    let kind = w.g.m.i32(base);
+    if kind == 0 {
+        for (k, bit) in bits.iter().enumerate() {
             let vk = w.g.m.i32(base + 4 + 4 * k as u32) as usize & 0xff;
             if keys[vk] == b'd' {
+                b |= bit;
+            }
+        }
+    } else if (1..=crate::input::JOYSTICK_COUNT as i32).contains(&kind) {
+        // as read_inputs_and_ai (0x419a60) reads a joystick: the directions, then the
+        // buttons control.txt chose for attack, jump and defend (+0x20, +0x24, +0x28)
+        let j = crate::input::joystick(&w.g, kind as usize - 1);
+        let button = |at: u32| usize::try_from(w.g.m.i32(base + at)).ok().and_then(|n| j.buttons.get(n).copied()).unwrap_or(false);
+        let pressed = [j.up, j.down, j.left, j.right, button(0x20), button(0x24), button(0x28)];
+        for (p, bit) in pressed.iter().zip(bits) {
+            if *p {
                 b |= bit;
             }
         }

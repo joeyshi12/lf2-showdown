@@ -6,11 +6,9 @@
 //! section so a differential test can say where a difference may come from.
 
 use crate::controls::obj_controls;
+use crate::input::JOYSTICKS;
 use crate::movement::obj_move;
 use crate::world::{World, CONTROLS, KEYS, MAX_OBJECTS, PLAYER_OF_SLOT};
-
-/// Joystick state, 0x30 bytes per joystick: up, down, right, left, then buttons.
-const JOYSTICKS: u32 = 0x453ff0;
 
 /// Key array entry of a virtual key.
 fn key_at(vk: u32) -> u32 {

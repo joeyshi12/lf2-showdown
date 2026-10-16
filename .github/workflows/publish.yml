@@ -24,14 +24,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4 whoami
 
-      # alsa, x11 and wayland for the desktop crate the tests build, fonts-wine for the System
+      # alsa, x11 and wayland for the desktop crate the tests build, udev for gilrs, fonts-wine for the System
       # font build.rs puts into the program
       - name: install packages
         run: |
           sudo apt-get update -q
           sudo apt-get install -yq --no-install-recommends pkg-config libasound2-dev \
             libx11-dev libxkbcommon-dev libwayland-dev libxcursor-dev libxrandr-dev \
-            libxi-dev fonts-wine
+            libxi-dev libudev-dev fonts-wine
 
       - uses: dtolnay/rust-toolchain@stable
         with:

@@ -477,7 +477,9 @@ impl World {
                 } else if k < 4 {
                     self.text(b"-", 0x2c0900, 0xffffff, x + 0x30, y);
                 } else {
-                    let s = format!("Button: {}", self.t(CONTROLS + 4 * slot as u32));
+                    // a joystick's attack, jump and defend buttons are the three numbers
+                    // after the keys (+0x20, where the slot waiting above writes them)
+                    let s = format!("Button: {}", self.t(0x44fb7c + 4 * slot as u32));
                     self.text(s.as_bytes(), 0x2c0900, color, x + 0x22, y);
                 }
             }
