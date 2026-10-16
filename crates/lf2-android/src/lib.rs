@@ -31,9 +31,7 @@ fn android_main(app: AndroidApp) {
     let event_loop = EventLoop::builder().with_android_app(app).build().expect("event loop");
     let options = Options { dir, p1: None, p2: None, bg: None, seed: None, fps: 60, fullscreen: true, touch: true, dump: None };
     run(options, |fullscreen| Display::with_event_loop(event_loop, "Little Fighter 2", fullscreen));
-    // The process can outlive the activity, and winit makes one event loop per
-    // process: a second android_main in it would fail to start.
-    std::process::exit(0);
+    // Returning finishes the activity; MainActivity.onDestroy then ends the process.
 }
 
 fn read_asset(app: &AndroidApp, path: &str) -> std::io::Result<Vec<u8>> {
