@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon as an adaptive icon: the launcher crops it to its own shape (a
+     circle, a squircle) and shows the middle 72 of its 108 dp. An icon that is only a
+     square picture is shrunk into a white shape instead. The foreground is Davis's
+     portrait (sprite/sys/davis_f.bmp) covering the middle 72 dp, its edge pixels
+     repeated out to 108 dp for the launcher's motion effects. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
