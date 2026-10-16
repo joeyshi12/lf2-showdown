@@ -1,15 +1,18 @@
 //! Resizable winit window with a softbuffer surface. `Display::pump` lets the game
 //! keep its own loop; the picture uses nearest-neighbour scaling with black bars.
+//! With touch controls (`Display::set_touch_controls`) the on-screen controls of
+//! `touch::TouchPad` are drawn over the picture and touches press keys.
 
 use crate::render::{H, W};
+use crate::touch::{Phase, TouchPad};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Fullscreen, Window, WindowId};
 
@@ -199,11 +202,21 @@ struct App {
     /// themselves when `set_fullscreen(None)` is called).
     windowed_size: PhysicalSize<u32>,
     windowed_pos: Option<PhysicalPosition<i32>>,
+    touch: Option<TouchPad>,
+    /// The on-screen keyboard was asked for (Android).
+    keyboard_shown: bool,
+    /// Key events held back for the tick after the next.
+    next_tick: Vec<(u8, bool)>,
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if let Some(window) = &self.window {
+            // Android: the app came back to the front with a new native window
+            if self.surface.is_none() {
+                self.surface = Self::surface(window);
+                self.surface_size = (0, 0);
+            }
             return;
         }
         let attrs = Window::default_attributes()
@@ -224,10 +237,15 @@ impl ApplicationHandler for App {
             window.set_fullscreen(Some(Fullscreen::Borderless(None)));
             window.set_cursor_visible(false);
         }
-        let ctx = softbuffer::Context::new(window.clone()).expect("display context");
-        self.surface =
-            Some(softbuffer::Surface::new(&ctx, window.clone()).expect("window surface"));
+        self.surface = Some(Self::surface(&window).expect("window surface"));
         self.window = Some(window);
+    }
+
+    /// Android: the app went to the back and its native window is gone.
+    fn suspended(&mut self, _el: &ActiveEventLoop) {
+        self.surface = None;
+        self.surface_size = (0, 0);
+        self.release_all();
     }
 
     fn window_event(&mut self, _el: &ActiveEventLoop, _id: WindowId, ev: WindowEvent) {
@@ -253,6 +271,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
             WindowEvent::KeyboardInput { event, .. } => {
+                if event.logical_key == Key::Named(NamedKey::BrowserBack) {
+                    // Android's back button: F4, back to the menu. The button's press
+                    // and release can come in the same tick, so it is a tap of the
+                    // touch controls, which lasts long enough for the game to see it.
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        if let Some(pad) = self.touch.as_mut() {
+                            pad.tap(0x73);
+                        }
+                    }
+                    return;
+                }
                 let PhysicalKey::Code(code) = event.physical_key else {
                     return;
                 };
@@ -267,21 +296,43 @@ impl ApplicationHandler for App {
                 }
                 if let Some(v) = vk(code) {
                     self.held[v as usize] = down;
+                    if !down && self.touch.is_some() && self.events.contains(&(v, true)) {
+                        // An on-screen keyboard sends a key's press and release
+                        // together; the release waits for the next tick so that the
+                        // game sees the press.
+                        self.next_tick.push((v, false));
+                        return;
+                    }
                     // the repeats are key downs too, as the WM_KEYDOWN messages of a held key
                     self.events.push((v, down));
                 }
             }
-            WindowEvent::Focused(false) => {
-                // keys released while another window had the focus are never seen
-                for (v, h) in self.held.iter_mut().enumerate() {
-                    if std::mem::take(h) {
-                        self.events.push((v as u8, false));
+            WindowEvent::Focused(false) => self.release_all(),
+            WindowEvent::Touch(t) => {
+                let size = self.buffer_size();
+                let (x, y) = self.to_buffer(t.location.x, t.location.y);
+                let Some(pad) = self.touch.as_mut() else { return };
+                pad.resize(size.width, size.height);
+                let phase = match t.phase {
+                    TouchPhase::Started => Phase::Start,
+                    TouchPhase::Moved => Phase::Move,
+                    TouchPhase::Ended | TouchPhase::Cancelled => Phase::End,
+                };
+                let r = pad.touch(t.id, phase, x, y);
+                if let Some((x, y, down)) = r.mouse {
+                    self.mouse = Some((x, y));
+                    self.mouse_down = down;
+                    self.pressed |= down;
+                }
+                if r.toggle_keyboard {
+                    self.keyboard_shown = !self.keyboard_shown;
+                    if let Some(w) = &self.window {
+                        w.set_ime_allowed(self.keyboard_shown);
                     }
                 }
-                self.mouse_down = false;
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse = Some((position.x, position.y))
+                self.mouse = Some(self.to_buffer(position.x, position.y))
             }
             WindowEvent::CursorLeft { .. } => {}
             WindowEvent::MouseInput {
@@ -298,6 +349,47 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    /// The size of the picture buffer. On Android it is the game's height and the
+    /// window's shape, and the system scales it to the window: drawing every pixel
+    /// of a phone's screen in software is too slow for 30 ticks a second.
+    fn buffer_size(&self) -> PhysicalSize<u32> {
+        let size = self.window.as_ref().map(|w| w.inner_size()).unwrap_or_default();
+        if cfg!(target_os = "android") && size.height > H as u32 {
+            let w = (size.width as u64 * H as u64 / size.height as u64) as u32;
+            PhysicalSize::new(w.max(1), H as u32)
+        } else {
+            size
+        }
+    }
+
+    /// A position in the window in the buffer's pixels.
+    fn to_buffer(&self, x: f64, y: f64) -> (f64, f64) {
+        let size = self.window.as_ref().map(|w| w.inner_size()).unwrap_or_default();
+        let b = self.buffer_size();
+        if size.width == 0 || size.height == 0 {
+            return (x, y);
+        }
+        (x * b.width as f64 / size.width as f64, y * b.height as f64 / size.height as f64)
+    }
+
+    fn surface(window: &Arc<Window>) -> Option<softbuffer::Surface<Arc<Window>, Arc<Window>>> {
+        let ctx = softbuffer::Context::new(window.clone()).ok()?;
+        softbuffer::Surface::new(&ctx, window.clone()).ok()
+    }
+
+    /// Keys released while another window had the focus are never seen.
+    fn release_all(&mut self) {
+        for (v, h) in self.held.iter_mut().enumerate() {
+            if std::mem::take(h) {
+                self.events.push((v as u8, false));
+            }
+        }
+        if let Some(pad) = self.touch.as_mut() {
+            pad.release_all(&mut self.events);
+        }
+        self.mouse_down = false;
+    }
+
     fn toggle_fullscreen(&mut self) {
         let Some(w) = &self.window else { return };
         self.fullscreen = w.fullscreen().is_none();
@@ -324,7 +416,11 @@ pub struct Display {
 
 impl Display {
     pub fn new(title: &str, fullscreen: bool) -> Display {
-        let event_loop = EventLoop::new().expect("event loop");
+        Self::with_event_loop(EventLoop::new().expect("event loop"), title, fullscreen)
+    }
+
+    /// Android needs an event loop made from its `AndroidApp`.
+    pub fn with_event_loop(event_loop: EventLoop<()>, title: &str, fullscreen: bool) -> Display {
         let app = App {
             title: title.into(),
             fullscreen,
@@ -340,9 +436,15 @@ impl Display {
             pressed: false,
             windowed_size: PhysicalSize::new(W as u32, H as u32),
             windowed_pos: None,
+            touch: None,
+            keyboard_shown: false,
+            next_tick: Vec::new(),
         };
         let mut d = Display { event_loop, app };
-        for _ in 0..200 {
+        // up to a second; on Android as long as it takes, since the app starts before
+        // its window exists and the window only comes once the app is in front
+        let tries = if cfg!(target_os = "android") { usize::MAX } else { 200 };
+        for _ in 0..tries {
             if d.app.window.is_some() || !d.app.open {
                 break;
             }
@@ -363,9 +465,33 @@ impl Display {
         self.app.open
     }
 
-    /// Includes repeated key-down events for held keys.
+    /// False while there is nothing to draw on (an Android app in the back).
+    pub fn is_visible(&self) -> bool {
+        self.app.surface.is_some()
+    }
+
+    /// Show the on-screen controls, pressing player 1's up, down, left, right,
+    /// attack, jump and defend keys `keys`; None hides them.
+    pub fn set_touch_controls(&mut self, keys: Option<[u8; 7]>) {
+        match (keys, self.app.touch.as_mut()) {
+            (Some(k), Some(pad)) => pad.set_keys(k),
+            (Some(k), None) => self.app.touch = Some(TouchPad::new(k)),
+            (None, _) => {
+                self.app.release_all();
+                self.app.touch = None;
+            }
+        }
+    }
+
+    /// Includes repeated key-down events for held keys. Call it once a tick: the
+    /// touch controls report a tap that started and ended since the last call as a
+    /// press now and a release on the next call.
     pub fn take_keys(&mut self, out: &mut Vec<(u8, bool)>) {
         out.append(&mut self.app.events);
+        if let Some(pad) = self.app.touch.as_mut() {
+            pad.changes(out);
+        }
+        self.app.events.append(&mut self.app.next_tick);
     }
 
     pub fn ctrl_down(&self) -> bool {
@@ -380,7 +506,7 @@ impl Display {
     /// moved over the window.
     pub fn mouse(&self) -> Option<(i32, i32)> {
         let (mx, my) = self.app.mouse?;
-        let size = self.app.window.as_ref()?.inner_size();
+        let size = self.app.buffer_size();
         let (s, ox, oy, _, _) = layout(size.width, size.height);
         let x = ((mx - ox as f64) / s).floor().clamp(0.0, W as f64 - 1.0) as i32;
         let y = ((my - oy as f64) / s).floor().clamp(0.0, H as f64 - 1.0) as i32;
@@ -388,10 +514,10 @@ impl Display {
     }
 
     pub fn present(&mut self, px: &[u32]) {
-        let (Some(window), Some(surface)) = (&self.app.window, &mut self.app.surface) else {
+        let size = self.app.buffer_size();
+        let (Some(_), Some(surface)) = (&self.app.window, &mut self.app.surface) else {
             return;
         };
-        let size = window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
         };
@@ -403,6 +529,10 @@ impl Display {
         }
         if let Ok(mut buf) = surface.buffer_mut() {
             scale_into(px, &mut buf, size.width, size.height);
+            if let Some(pad) = self.app.touch.as_mut() {
+                pad.resize(size.width, size.height);
+                pad.draw(&mut buf, size.width, size.height);
+            }
             let _ = buf.present();
         }
     }

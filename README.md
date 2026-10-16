@@ -8,6 +8,12 @@ Little Fighter 2 v2.0a rebuilt in Rust. Private study only.
   folder and run it there. Alt+Enter switches between a window and full screen;
   `--fullscreen` starts full screen. The window can be resized.
 - Browser: see "Web" below.
+- Touch screens: `--touch` shows on-screen controls for player 1: the direction pad
+  at the bottom left, attack (A), jump (J) and defend (D) at the bottom right, and F4
+  (back to the menu), F1 (pause) and the on-screen keyboard at the top. A touch
+  anywhere else is the mouse, for the menus.
+- Android: install the APK from "Build" below. It runs full screen in landscape with
+  the touch controls above; the back button is F4.
 - Music: `game/bgm/` has the music as Ogg. For another copy of the game, run
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.
@@ -28,6 +34,12 @@ folder) from `LF2_DIR` into the program, so the program can replace `lf2.exe`.
 - Windows, on Windows: `cargo build --release -p lf2-app`
 - Windows, from Linux: `tools/cross/build-windows.sh` (needs the `x86_64-pc-windows-gnu`
   Rust target and zig: `pip install ziglang`)
+- Android, from Linux: `tools/android/build-apk.sh [OUT.apk]` (default
+  `target/lf2-showdown.apk`). Needs the Android SDK with build-tools and a platform
+  (`ANDROID_HOME`, default `~/Android/Sdk`), the NDK, a JDK, and the
+  `aarch64-linux-android` Rust target; `ABIS="arm64-v8a x86_64"` also builds for the
+  emulator. Install with `adb install target/lf2-showdown.apk`. The APK carries the
+  game folder, which the app copies to its own storage on the first start.
 - Web: `wasm-pack build --release --target web --out-dir OUT crates/lf2-web`, then
   `tools/web/package.sh OUT DIST GAME_DIR`, and serve `DIST` with any web server.
 

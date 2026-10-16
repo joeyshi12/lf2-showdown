@@ -1,6 +1,6 @@
 name: build
 
-# Tests and packages Linux and Windows; tags also create releases.
+# Tests and packages Linux, Windows and Android; tags also create releases.
 
 on:
   push:
@@ -85,9 +85,38 @@ jobs:
           path: lf2-showdown-windows-x86_64.zip
           if-no-files-found: error
 
+  # The runner has the Android SDK and NDK; the APK is signed with a debug key made
+  # for the run.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+
+      # fonts-wine for the System font build.rs puts into the program
+      - name: install packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends fonts-wine
+
+      - name: build
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: tools/android/build-apk.sh lf2-showdown-android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lf2-showdown-android
+          path: lf2-showdown-android.apk
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows]
+    needs: [linux, windows, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -103,4 +132,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --title "LF2 Showdown ${GITHUB_REF_NAME#v}" --generate-notes \
             artifacts/lf2-showdown-linux-x86_64/lf2-showdown-linux-x86_64.tar.gz \
-            artifacts/lf2-showdown-windows-x86_64/lf2-showdown-windows-x86_64.zip
+            artifacts/lf2-showdown-windows-x86_64/lf2-showdown-windows-x86_64.zip \
+            artifacts/lf2-showdown-android/lf2-showdown-android.apk
