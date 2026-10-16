@@ -124,6 +124,7 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
         renderer.names[i] = n.clone();
     }
     let mut frame = render::Frame::new();
+    frame.hide_cursor = touch;
     if let Some((n, path)) = dump {
         for _ in 0..n {
             world.set_keys(&[b'u'; 256]);

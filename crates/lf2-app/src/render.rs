@@ -16,11 +16,13 @@ pub struct Frame {
     /// follows the mouse on every picture, not only at ticks. None draws it where
     /// the tick put it.
     pub cursor: Option<(i32, i32)>,
+    /// Leave out the menus' cursor (touch screens, where there is no mouse to show).
+    pub hide_cursor: bool,
 }
 
 impl Frame {
     pub fn new() -> Self {
-        Frame { px: vec![0; (W * H) as usize], cursor: None }
+        Frame { px: vec![0; (W * H) as usize], cursor: None, hide_cursor: false }
     }
 
     pub fn fill(&mut self, x: i32, y: i32, w: i32, h: i32, rgb: u32) {
@@ -469,6 +471,7 @@ impl Frame {
         for d in list {
             match d {
                 Draw::Fill { x, y, w, h, rgb } => self.fill(*x, *y, *w, *h, *rgb),
+                Draw::Blit { sheet: Sheet::Global(lf2_sim::menu::main_menu::CURSOR), .. } if self.hide_cursor => {}
                 Draw::Blit { sheet, x, y, clip, key } => {
                     // the menus' cursor (0x4246b0 and 0x423b00 draw it at the mouse,
                     // x at most 0x307, y + 2 at most 0x217)
@@ -589,5 +592,31 @@ impl Frame {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assets::{Assets, Surface};
+    use lf2_sim::draw::{Draw, Sheet};
+
+    /// Draws the menus' cursor, a white 4x4 picture, at (10, 10).
+    fn draw_cursor(hide: bool) -> Frame {
+        let mut res = std::collections::HashMap::new();
+        res.insert("LF2_CURSOR".to_string(), Surface::whole(lf2_data::image::Image { w: 4, h: 4, px: vec![0xffffff; 16] }));
+        let a = Assets { objects: Vec::new(), backgrounds: Vec::new(), res, ad: None };
+        let mut f = Frame::new();
+        f.hide_cursor = hide;
+        let cursor = Sheet::Global(lf2_sim::menu::main_menu::CURSOR);
+        f.draw_list(&a, &[Draw::Blit { sheet: cursor, x: 10, y: 10, clip: -1, key: true }]);
+        f
+    }
+
+    #[test]
+    fn hide_cursor_leaves_out_the_menus_cursor() {
+        let at = (11 * W + 11) as usize;
+        assert_eq!(draw_cursor(false).px[at], 0xffffff);
+        assert_eq!(draw_cursor(true).px[at], 0);
     }
 }
