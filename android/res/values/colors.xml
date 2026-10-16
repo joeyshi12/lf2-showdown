@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the blue at the sides of Davis's portrait -->
+    <color name="ic_launcher_background">#24548F</color>
+</resources>

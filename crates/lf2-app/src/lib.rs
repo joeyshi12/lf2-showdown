@@ -1,4 +1,4 @@
-//! Desktop rendering, audio, window and network support.
+//! Desktop and Android rendering, audio, window, touch controls and network support.
 pub mod assets;
 pub mod exe_image;
 #[cfg(windows)]
@@ -13,6 +13,10 @@ pub mod sound_names;
 pub mod ogg;
 #[cfg(feature = "native")]
 pub mod platform;
+#[cfg(feature = "native")]
+pub mod game;
+#[cfg(feature = "native")]
+pub mod touch;
 #[cfg(feature = "native")]
 pub mod window;
 #[cfg(feature = "native")]

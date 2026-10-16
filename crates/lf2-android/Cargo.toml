@@ -1,0 +1,17 @@
+[package]
+name = "lf2-android"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+# The Android app: liblf2_android.so, loaded by the NativeActivity in android/.
+# tools/android/build-apk.sh builds it and packs it into an APK.
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+lf2-app = { path = "../lf2-app" }
+winit = { version = "0.30", features = ["android-native-activity"] }
+# the version android-activity (through winit) uses, for its AssetManager
+ndk = "0.9"
+libc = "0.2"

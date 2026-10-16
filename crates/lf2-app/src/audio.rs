@@ -48,7 +48,7 @@ pub struct Audio {
     /// The waves `play_buffer` plays, in `BUFFER_SOUNDS` order.
     buffers: Vec<Option<Wave>>,
     data: Vec<Option<Wave>>,
-    _stream: Option<cpal::Stream>,
+    stream: Option<cpal::Stream>,
 }
 
 fn parse_wav(b: &[u8]) -> Option<Wave> {
@@ -112,7 +112,7 @@ impl Audio {
             out_rate: 44100,
         }));
         let stream = Self::open(mixer.clone());
-        Audio { mixer, game_dir: gd.dir.clone(), music_file: Vec::new(), system, data, buffers, _stream: stream }
+        Audio { mixer, game_dir: gd.dir.clone(), music_file: Vec::new(), system, data, buffers, stream }
     }
 
     fn open(mixer: Arc<Mutex<Mixer>>) -> Option<cpal::Stream> {
@@ -167,6 +167,17 @@ impl Audio {
             .ok()?;
         stream.play().ok()?;
         Some(stream)
+    }
+
+    /// Stop the sound while the game is not on screen (an Android app in the back).
+    pub fn set_paused(&self, paused: bool) {
+        if let Some(s) = &self.stream {
+            if paused {
+                let _ = s.pause();
+            } else {
+                let _ = s.play();
+            }
+        }
     }
 
     pub fn music(&mut self, events: &[Option<Vec<u8>>], master: i32) {
