@@ -13,7 +13,10 @@ Little Fighter 2 v2.0a rebuilt in Rust. Private study only.
   (back to the menu), F1 (pause) and the on-screen keyboard at the top. A touch
   anywhere else is the mouse, for the menus.
 - Android: install the APK from "Build" below. It runs full screen in landscape with
-  the touch controls above; the back button is F4.
+  the touch controls above; the back button is F4. A controller (a gamepad, or the
+  built-in controls of an Android handheld) plays player 1 without changing the
+  control settings: the touch controls hide while it is used and come back when the
+  screen is touched. Start is F1 (pause) and Select is F4.
 - Game controllers (desktop and browser): under control settings, click a player's
   picture to switch from the keyboard to joystick 1 or 2, the first and second
   controller connected. The direction pad and left stick move; the bottom, right,

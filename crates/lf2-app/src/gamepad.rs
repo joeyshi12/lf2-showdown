@@ -31,6 +31,12 @@ fn from_inputs(a: &[bool; INPUTS]) -> Joystick {
     Joystick { up: a[0], down: a[1], left: a[2], right: a[3], buttons: std::array::from_fn(|k| a[4 + k]) }
 }
 
+/// Everything either of `a` and `b` presses.
+pub fn merge(a: Joystick, b: Joystick) -> Joystick {
+    let (a, b) = (to_inputs(&a), to_inputs(&b));
+    from_inputs(&std::array::from_fn(|i| a[i] || b[i]))
+}
+
 /// The directions a stick at (x, y) presses, x to the right and y up, each from -1
 /// to 1: up, down, left, right.
 pub fn stick_directions(x: f32, y: f32) -> [bool; 4] {
@@ -73,6 +79,8 @@ impl Controllers {
     pub fn new() -> Controllers {
         let gilrs = match gilrs::Gilrs::new() {
             Ok(g) => Some(g),
+            // gilrs has no Android backend; the Android app reads controllers itself
+            Err(_) if cfg!(target_os = "android") => None,
             Err(e) => {
                 eprintln!("no game controllers: {}", e);
                 None
