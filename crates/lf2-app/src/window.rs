@@ -4,7 +4,10 @@
 //! `touch::TouchPad` are drawn over the picture and touches press keys.
 
 use crate::render::{H, W};
-use crate::touch::{Phase, TouchPad};
+use crate::gamepad;
+pub use crate::touch::Phase;
+use crate::touch::TouchPad;
+use lf2_sim::input::{Joystick, JOYSTICK_COUNT};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +15,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Fullscreen, Window, WindowId};
 
@@ -207,6 +210,62 @@ struct App {
     keyboard_shown: bool,
     /// Key events held back for the tick after the next.
     next_tick: Vec<(u8, bool)>,
+    /// Controllers an `InputSource` reports, joysticks 1 and 2 in the order first seen.
+    controllers: Vec<Controller>,
+    /// Joystick 1 presses player 1's keys through the touch controls.
+    controller_keys: bool,
+}
+
+struct Controller {
+    device: i32,
+    now: Joystick,
+    /// Everything pressed since `Display::controllers` last looked.
+    since: Joystick,
+}
+
+/// Input that a platform reads itself rather than through winit: on Android winit
+/// reports controllers' sticks as touches and does not report their buttons, so the
+/// app reads the input queue with each event's source before winit does.
+pub trait InputSource {
+    /// Called before winit's events on every `Display::pump`.
+    fn read(&mut self, input: &mut Input<'_>);
+}
+
+/// What an `InputSource` can report.
+pub struct Input<'a> {
+    app: &'a mut App,
+}
+
+impl Input<'_> {
+    /// A touch at (x, y) in the window's pixels.
+    pub fn touch(&mut self, id: u64, phase: Phase, x: f64, y: f64) {
+        self.app.touch(id, phase, x, y);
+    }
+
+    /// A key, by its virtual-key code.
+    pub fn key(&mut self, vk: u8, down: bool) {
+        self.app.key(vk, down);
+    }
+
+    /// Press the key `vk` for `touch::MIN_TICKS` ticks (a button whose press and
+    /// release can come in the same tick, such as Android's back button).
+    pub fn tap(&mut self, vk: u8) {
+        if let Some(pad) = self.app.touch.as_mut() {
+            pad.tap(vk);
+        }
+    }
+
+    /// What controller `device` is pressing now.
+    pub fn controller(&mut self, device: i32, j: Joystick) {
+        self.app.controller(device, j);
+    }
+
+    /// Show or hide the touch controls (hidden, a touch shows them again).
+    pub fn show_touch_controls(&mut self, show: bool) {
+        if let Some(pad) = self.app.touch.as_mut() {
+            pad.set_visible(show);
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -271,17 +330,6 @@ impl ApplicationHandler for App {
             }
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.logical_key == Key::Named(NamedKey::BrowserBack) {
-                    // Android's back button: F4, back to the menu. The button's press
-                    // and release can come in the same tick, so it is a tap of the
-                    // touch controls, which lasts long enough for the game to see it.
-                    if event.state == ElementState::Pressed && !event.repeat {
-                        if let Some(pad) = self.touch.as_mut() {
-                            pad.tap(0x73);
-                        }
-                    }
-                    return;
-                }
                 let PhysicalKey::Code(code) = event.physical_key else {
                     return;
                 };
@@ -295,41 +343,17 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let Some(v) = vk(code) {
-                    self.held[v as usize] = down;
-                    if !down && self.touch.is_some() && self.events.contains(&(v, true)) {
-                        // An on-screen keyboard sends a key's press and release
-                        // together; the release waits for the next tick so that the
-                        // game sees the press.
-                        self.next_tick.push((v, false));
-                        return;
-                    }
-                    // the repeats are key downs too, as the WM_KEYDOWN messages of a held key
-                    self.events.push((v, down));
+                    self.key(v, down);
                 }
             }
             WindowEvent::Focused(false) => self.release_all(),
             WindowEvent::Touch(t) => {
-                let size = self.buffer_size();
-                let (x, y) = self.to_buffer(t.location.x, t.location.y);
-                let Some(pad) = self.touch.as_mut() else { return };
-                pad.resize(size.width, size.height);
                 let phase = match t.phase {
                     TouchPhase::Started => Phase::Start,
                     TouchPhase::Moved => Phase::Move,
                     TouchPhase::Ended | TouchPhase::Cancelled => Phase::End,
                 };
-                let r = pad.touch(t.id, phase, x, y);
-                if let Some((x, y, down)) = r.mouse {
-                    self.mouse = Some((x, y));
-                    self.mouse_down = down;
-                    self.pressed |= down;
-                }
-                if r.toggle_keyboard {
-                    self.keyboard_shown = !self.keyboard_shown;
-                    if let Some(w) = &self.window {
-                        w.set_ime_allowed(self.keyboard_shown);
-                    }
-                }
+                self.touch(t.id, phase, t.location.x, t.location.y);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse = Some(self.to_buffer(position.x, position.y))
@@ -377,6 +401,63 @@ impl App {
         softbuffer::Surface::new(&ctx, window.clone()).ok()
     }
 
+    /// A key (virtual-key code `v`) was pressed or released; the repeats of a held
+    /// key are presses too, as the WM_KEYDOWN messages of a held key.
+    fn key(&mut self, v: u8, down: bool) {
+        self.held[v as usize] = down;
+        if !down && self.touch.is_some() && self.events.contains(&(v, true)) {
+            // An on-screen keyboard sends a key's press and release together; the
+            // release waits for the next tick so that the game sees the press.
+            self.next_tick.push((v, false));
+            return;
+        }
+        self.events.push((v, down));
+    }
+
+    /// A touch at (x, y) in the window's pixels.
+    fn touch(&mut self, id: u64, phase: Phase, x: f64, y: f64) {
+        let size = self.buffer_size();
+        let (x, y) = self.to_buffer(x, y);
+        let Some(pad) = self.touch.as_mut() else { return };
+        pad.resize(size.width, size.height);
+        let r = pad.touch(id, phase, x, y);
+        if let Some((x, y, down)) = r.mouse {
+            self.mouse = Some((x, y));
+            self.mouse_down = down;
+            self.pressed |= down;
+        }
+        if r.toggle_keyboard {
+            self.keyboard_shown = !self.keyboard_shown;
+            if let Some(w) = &self.window {
+                w.set_ime_allowed(self.keyboard_shown);
+            }
+        }
+    }
+
+    /// Controller `device` is pressing `j` now. The first two devices seen are
+    /// joysticks 1 and 2. Pressing anything hides the touch controls.
+    fn controller(&mut self, device: i32, j: Joystick) {
+        let slot = match self.controllers.iter().position(|c| c.device == device) {
+            Some(i) => i,
+            None if self.controllers.len() < JOYSTICK_COUNT => {
+                self.controllers.push(Controller { device, now: Joystick::default(), since: Joystick::default() });
+                self.controllers.len() - 1
+            }
+            None => return,
+        };
+        let c = &mut self.controllers[slot];
+        c.now = j;
+        c.since = gamepad::merge(c.since, j);
+        if let Some(pad) = self.touch.as_mut() {
+            if j != Joystick::default() {
+                pad.set_visible(false);
+            }
+            if slot == 0 && self.controller_keys {
+                pad.set_controller(j);
+            }
+        }
+    }
+
     /// Keys released while another window had the focus are never seen.
     fn release_all(&mut self) {
         for (v, h) in self.held.iter_mut().enumerate() {
@@ -386,6 +467,9 @@ impl App {
         }
         if let Some(pad) = self.touch.as_mut() {
             pad.release_all(&mut self.events);
+        }
+        for c in &mut self.controllers {
+            c.now = Joystick::default();
         }
         self.mouse_down = false;
     }
@@ -412,6 +496,7 @@ impl App {
 pub struct Display {
     event_loop: EventLoop<()>,
     app: App,
+    source: Option<Box<dyn InputSource>>,
 }
 
 impl Display {
@@ -439,8 +524,10 @@ impl Display {
             touch: None,
             keyboard_shown: false,
             next_tick: Vec::new(),
+            controllers: Vec::new(),
+            controller_keys: false,
         };
-        let mut d = Display { event_loop, app };
+        let mut d = Display { event_loop, app, source: None };
         // up to a second; on Android as long as it takes, since the app starts before
         // its window exists and the window only comes once the app is in front
         let tries = if cfg!(target_os = "android") { usize::MAX } else { 200 };
@@ -455,7 +542,15 @@ impl Display {
         d
     }
 
+    /// Read input from `source` too, before winit's events, from the next pump on.
+    pub fn set_input_source(&mut self, source: Box<dyn InputSource>) {
+        self.source = Some(source);
+    }
+
     pub fn pump(&mut self) {
+        if let Some(source) = self.source.as_mut() {
+            source.read(&mut Input { app: &mut self.app });
+        }
         let _ = self
             .event_loop
             .pump_app_events(Some(Duration::ZERO), &mut self.app);
@@ -480,6 +575,36 @@ impl Display {
                 self.app.release_all();
                 self.app.touch = None;
             }
+        }
+    }
+
+    /// What the controllers an `InputSource` reports pressed since the last call, as
+    /// joysticks 1 and 2. While joystick 1 presses player 1's keys
+    /// (`set_controller_keys`) it is not joystick 1 as well: the control.txt the game
+    /// comes with puts players 2 to 4 on joystick 1, and they would all move with
+    /// player 1.
+    pub fn controllers(&mut self) -> [Joystick; JOYSTICK_COUNT] {
+        let mut out = [Joystick::default(); JOYSTICK_COUNT];
+        for (n, (o, c)) in out.iter_mut().zip(&mut self.app.controllers).enumerate() {
+            let j = gamepad::merge(c.now, std::mem::take(&mut c.since));
+            if n > 0 || !self.app.controller_keys {
+                *o = j;
+            }
+        }
+        out
+    }
+
+    /// Let joystick 1 press player 1's keys through the touch controls (when player
+    /// 1 plays on the keyboard, so that a controller works without changing the
+    /// control settings).
+    pub fn set_controller_keys(&mut self, on: bool) {
+        if self.app.controller_keys == on {
+            return;
+        }
+        self.app.controller_keys = on;
+        let now = self.app.controllers.first().map(|c| c.now).unwrap_or_default();
+        if let Some(pad) = self.app.touch.as_mut() {
+            pad.set_controller(if on { now } else { Joystick::default() });
         }
     }
 

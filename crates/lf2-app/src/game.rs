@@ -199,7 +199,13 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
                 }
             }
             apply_events(&mut events, &mut keys, &mut world.g);
-            joysticks.write(&mut world.g, &controllers.poll());
+            let mut pads = controllers.poll();
+            for (p, w) in pads.iter_mut().zip(window.controllers()) {
+                *p = crate::gamepad::merge(*p, w);
+            }
+            joysticks.write(&mut world.g, &pads);
+            // a player 1 on the keyboard plays with joystick 1 too (Android)
+            window.set_controller_keys(world.g.m.i32(lf2_sim::world::CONTROLS + 0x50) == 0);
             if let Some((mx, my)) = window.mouse() {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx);
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_Y, my);
