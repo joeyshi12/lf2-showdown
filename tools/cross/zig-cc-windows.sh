@@ -15,6 +15,9 @@ for a in "$@"; do
   case "$a" in
     -lgcc_eh) add -lunwind; continue ;;
     -lmsvcrt|-lgcc_s|-lgcc|-l:libpthread.a|-nodefaultlibs|-Wl,--disable-auto-image-base) continue ;;
+    # Rust's standard library links synchronization (WaitOnAddress and
+    # WakeByAddress*); zig's MinGW has those functions under this name instead
+    -lsynchronization) add -lapi-ms-win-core-synch-l1-2-0; continue ;;
     -l*)
       n=${a#-l}; found=""
       for d in $dirs; do
