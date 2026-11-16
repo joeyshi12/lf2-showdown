@@ -9,8 +9,11 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
-[target.'cfg(target_os = "android")'.dependencies]
+[dependencies]
 lf2-app = { path = "../lf2-app" }
+lf2-sim = { path = "../lf2-sim" }
+
+[target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30", features = ["android-native-activity"] }
 # the version android-activity (through winit) uses, for its AssetManager
 ndk = "0.9"

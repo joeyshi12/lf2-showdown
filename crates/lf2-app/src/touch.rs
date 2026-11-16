@@ -9,9 +9,15 @@
 //! black bars beside the picture are wide enough the controls sit in them; otherwise
 //! they are drawn over the picture, half transparent.
 //!
+//! A controller can press player 1's keys through the same path (`set_controller`).
+//! The controls are hidden while a controller is in use (`set_visible`) and come back
+//! when the screen is touched.
+//!
 //! `changes` is called once a tick. A key stays pressed for at least `MIN_TICKS`
 //! calls however short the touch was, because the game copies the keys into the
 //! players' objects only every other tick (0x419a60) and would miss a shorter tap.
+
+use lf2_sim::input::Joystick;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -93,7 +99,11 @@ pub struct TouchPad {
     /// For each key reported pressed, the number of calls of `changes` it has been
     /// pressed for.
     ticks: [u8; 256],
+    /// What the controller pressing player 1's keys is pressing now.
+    controller: Joystick,
+    visible: bool,
 }
+
 
 /// The fewest ticks a touch keeps a key pressed.
 pub const MIN_TICKS: u8 = 2;
@@ -113,7 +123,7 @@ const VK_F4: u8 = 0x73;
 impl TouchPad {
     /// `keys`: player 1's up, down, left, right, attack, jump and defend keys.
     pub fn new(keys: [u8; 7]) -> TouchPad {
-        TouchPad { keys, size: (0, 0), pad: (0, 0, 0), buttons: Vec::new(), touches: Vec::new(), pressed: [false; 256], reported: [false; 256], ticks: [0; 256] }
+        TouchPad { keys, size: (0, 0), pad: (0, 0, 0), buttons: Vec::new(), touches: Vec::new(), pressed: [false; 256], reported: [false; 256], ticks: [0; 256], controller: Joystick::default(), visible: true }
     }
 
     /// Player 1's keys from control.txt (the second to eighth numbers of the
@@ -179,6 +189,28 @@ impl TouchPad {
         self.buttons.push(right("KEYBOARD", Action::Keyboard, top + 2 * r + margin / 2));
     }
 
+    /// Show or hide the controls. Hidden, they are not drawn and a touch shows them
+    /// again (and does what it does when they are shown).
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
+
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
+    /// A controller is pressing `j`: the directions are player 1's up, down, left and
+    /// right, the bottom face button attack, the right one jump, and the left and
+    /// top ones defend (the buttons control.txt gives a joystick by default are 0,
+    /// 1 and 3).
+    pub fn set_controller(&mut self, j: Joystick) {
+        self.controller = j;
+        let touched = self.touched_keys();
+        for (p, t) in self.pressed.iter_mut().zip(touched) {
+            *p |= t;
+        }
+    }
+
     /// The button a touch at (x, y) is on: the nearest one within a little more than
     /// its size.
     fn button_at(&self, x: f64, y: f64) -> Option<usize> {
@@ -217,6 +249,7 @@ impl TouchPad {
 
     /// A touch went down, moved or was lifted at (x, y) in screen pixels.
     pub fn touch(&mut self, id: u64, phase: Phase, x: f64, y: f64) -> TouchResult {
+        self.visible = true;
         let mut out = TouchResult::default();
         let at = self.touches.iter().position(|(t, _)| *t == id);
         let role = match (phase, at) {
@@ -268,9 +301,16 @@ impl TouchPad {
         self.pressed[vk as usize] = true;
     }
 
-    /// The keys the touches are on now.
+    /// The keys the touches and the controller are on now.
     fn touched_keys(&self) -> [bool; 256] {
         let mut held = [false; 256];
+        let c = &self.controller;
+        let b = c.buttons;
+        for (k, on) in [c.up, c.down, c.left, c.right, b[0], b[1], b[2] || b[3]].into_iter().enumerate() {
+            if on {
+                held[self.keys[k] as usize] = true;
+            }
+        }
         for (_, role) in &self.touches {
             match *role {
                 Role::Pad { x, y } => {
@@ -311,6 +351,7 @@ impl TouchPad {
     /// Release every key (when the window loses the focus).
     pub fn release_all(&mut self, out: &mut Vec<(u8, bool)>) {
         self.touches.clear();
+        self.controller = Joystick::default();
         self.pressed = [false; 256];
         self.ticks = [0; 256];
         for k in 0..256 {
@@ -322,7 +363,7 @@ impl TouchPad {
 
     /// Draw the controls over the screen's pixels (`buf` is `w` x `h`, 0x00RRGGBB).
     pub fn draw(&self, buf: &mut [u32], w: u32, h: u32) {
-        if self.size != (w, h) || buf.len() < (w * h) as usize {
+        if !self.visible || self.size != (w, h) || buf.len() < (w * h) as usize {
             return;
         }
         let mut c = Canvas { buf, w: w as i32, h: h as i32 };
@@ -659,6 +700,41 @@ mod tests {
         for b in p.buttons.iter().filter(|b| b.shape == Shape::Circle) {
             assert!(b.x - b.r >= 2400 - bar - b.r / 10, "{} is over the picture", b.label);
         }
+    }
+
+    #[test]
+    fn a_controller_presses_player_1s_keys() {
+        let mut p = pad(2400, 1080);
+        p.set_controller(Joystick { right: true, buttons: [true, false, false, false], ..Default::default() });
+        assert_eq!(changes(&mut p), vec![(68, true), (74, true)]);
+        settle(&mut p);
+        // the left and the top face buttons are both defend
+        p.set_controller(Joystick { buttons: [false, false, true, false], ..Default::default() });
+        assert_eq!(changes(&mut p), vec![(68, false), (74, false), (76, true)]);
+        settle(&mut p);
+        p.set_controller(Joystick::default());
+        assert_eq!(changes(&mut p), vec![(76, false)]);
+        // a press between two ticks still reaches the game
+        p.set_controller(Joystick { buttons: [false, true, false, false], ..Default::default() });
+        p.set_controller(Joystick::default());
+        assert_eq!(changes(&mut p), vec![(75, true)]);
+    }
+
+    #[test]
+    fn hidden_controls_are_not_drawn_and_a_touch_shows_them() {
+        let (w, h) = (1200u32, 540u32);
+        let mut p = pad(w, h);
+        p.set_visible(false);
+        let mut buf = vec![0u32; (w * h) as usize];
+        p.draw(&mut buf, w, h);
+        assert!(buf.iter().all(|&px| px == 0));
+        // the touch on attack shows the controls and presses attack
+        let (x, y) = centre(&p, "A");
+        p.touch(1, Phase::Start, x, y);
+        assert!(p.visible());
+        assert_eq!(changes(&mut p), vec![(74, true)]);
+        p.draw(&mut buf, w, h);
+        assert!(buf.iter().any(|&px| px != 0));
     }
 
     #[test]
