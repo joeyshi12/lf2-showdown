@@ -34,6 +34,9 @@ public class MainActivity extends NativeActivity implements InputManager.InputDe
     /** crates/lf2-android/src/input.rs */
     private static native void nativeControllerConnected(boolean connected);
 
+    /** crates/lf2-android/src/input.rs */
+    private static native void nativeDeviceRemoved(int deviceId);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -48,6 +51,7 @@ public class MainActivity extends NativeActivity implements InputManager.InputDe
 
     @Override
     public void onInputDeviceRemoved(int deviceId) {
+        nativeDeviceRemoved(deviceId);
         reportControllers();
     }
 

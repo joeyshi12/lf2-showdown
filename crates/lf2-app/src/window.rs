@@ -210,8 +210,9 @@ struct App {
     keyboard_shown: bool,
     /// Key events held back for the tick after the next.
     next_tick: Vec<(u8, bool)>,
-    /// Controllers an `InputSource` reports, joysticks 1 and 2 in the order first seen.
-    controllers: Vec<Controller>,
+    /// Controllers an `InputSource` reports, as joysticks 1 and 2. A controller takes
+    /// the first free slot and keeps it until it is removed.
+    controllers: [Option<Controller>; JOYSTICK_COUNT],
     /// Joystick 1 presses player 1's keys through the touch controls.
     controller_keys: bool,
 }
@@ -258,6 +259,12 @@ impl Input<'_> {
     /// What controller `device` is pressing now.
     pub fn controller(&mut self, device: i32, j: Joystick) {
         self.app.controller(device, j);
+    }
+
+    /// Controller `device` was disconnected: release what it pressed and free its
+    /// joystick slot.
+    pub fn remove_controller(&mut self, device: i32) {
+        self.app.remove_controller(device);
     }
 
     /// Show or hide the touch controls (hidden, a touch shows them again).
@@ -373,6 +380,30 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    fn new(title: &str, fullscreen: bool) -> App {
+        App {
+            title: title.into(),
+            fullscreen,
+            window: None,
+            surface: None,
+            surface_size: (0, 0),
+            open: true,
+            events: Vec::new(),
+            held: [false; 256],
+            mods: ModifiersState::empty(),
+            mouse: None,
+            mouse_down: false,
+            pressed: false,
+            windowed_size: PhysicalSize::new(W as u32, H as u32),
+            windowed_pos: None,
+            touch: None,
+            keyboard_shown: false,
+            next_tick: Vec::new(),
+            controllers: Default::default(),
+            controller_keys: false,
+        }
+    }
+
     /// The size of the picture buffer. On Android it is the game's height and the
     /// window's shape, and the system scales it to the window: drawing every pixel
     /// of a phone's screen in software is too slow for 30 ticks a second.
@@ -434,18 +465,19 @@ impl App {
         }
     }
 
-    /// Controller `device` is pressing `j` now. The first two devices seen are
-    /// joysticks 1 and 2. Pressing anything hides the touch controls.
+    /// Controller `device` is pressing `j` now. A new device takes the first free
+    /// joystick slot; with no free slot it is ignored. Pressing anything hides the
+    /// touch controls.
     fn controller(&mut self, device: i32, j: Joystick) {
-        let slot = match self.controllers.iter().position(|c| c.device == device) {
+        let slot = match self.controllers.iter().position(|c| c.as_ref().is_some_and(|c| c.device == device)) {
             Some(i) => i,
-            None if self.controllers.len() < JOYSTICK_COUNT => {
-                self.controllers.push(Controller { device, now: Joystick::default(), since: Joystick::default() });
-                self.controllers.len() - 1
+            None => {
+                let Some(i) = self.controllers.iter().position(Option::is_none) else { return };
+                self.controllers[i] = Some(Controller { device, now: Joystick::default(), since: Joystick::default() });
+                i
             }
-            None => return,
         };
-        let c = &mut self.controllers[slot];
+        let Some(c) = self.controllers[slot].as_mut() else { return };
         c.now = j;
         c.since = gamepad::merge(c.since, j);
         if let Some(pad) = self.touch.as_mut() {
@@ -458,6 +490,33 @@ impl App {
         }
     }
 
+    /// Controller `device` was disconnected. Its slot is freed, and if it was
+    /// pressing player 1's keys they are released.
+    fn remove_controller(&mut self, device: i32) {
+        let Some(slot) = self.controllers.iter().position(|c| c.as_ref().is_some_and(|c| c.device == device)) else { return };
+        self.controllers[slot] = None;
+        if slot == 0 && self.controller_keys {
+            if let Some(pad) = self.touch.as_mut() {
+                pad.set_controller(Joystick::default());
+            }
+        }
+    }
+
+    /// What the controllers pressed since the last call, as joysticks 1 and 2. While
+    /// joystick 1 presses player 1's keys (`controller_keys`) it is not joystick 1
+    /// as well.
+    fn take_controllers(&mut self) -> [Joystick; JOYSTICK_COUNT] {
+        let mut out = [Joystick::default(); JOYSTICK_COUNT];
+        for (n, (o, c)) in out.iter_mut().zip(&mut self.controllers).enumerate() {
+            let Some(c) = c else { continue };
+            let j = gamepad::merge(c.now, std::mem::take(&mut c.since));
+            if n > 0 || !self.controller_keys {
+                *o = j;
+            }
+        }
+        out
+    }
+
     /// Keys released while another window had the focus are never seen.
     fn release_all(&mut self) {
         for (v, h) in self.held.iter_mut().enumerate() {
@@ -468,7 +527,7 @@ impl App {
         if let Some(pad) = self.touch.as_mut() {
             pad.release_all(&mut self.events);
         }
-        for c in &mut self.controllers {
+        for c in self.controllers.iter_mut().flatten() {
             c.now = Joystick::default();
         }
         self.mouse_down = false;
@@ -506,27 +565,7 @@ impl Display {
 
     /// Android needs an event loop made from its `AndroidApp`.
     pub fn with_event_loop(event_loop: EventLoop<()>, title: &str, fullscreen: bool) -> Display {
-        let app = App {
-            title: title.into(),
-            fullscreen,
-            window: None,
-            surface: None,
-            surface_size: (0, 0),
-            open: true,
-            events: Vec::new(),
-            held: [false; 256],
-            mods: ModifiersState::empty(),
-            mouse: None,
-            mouse_down: false,
-            pressed: false,
-            windowed_size: PhysicalSize::new(W as u32, H as u32),
-            windowed_pos: None,
-            touch: None,
-            keyboard_shown: false,
-            next_tick: Vec::new(),
-            controllers: Vec::new(),
-            controller_keys: false,
-        };
+        let app = App::new(title, fullscreen);
         let mut d = Display { event_loop, app, source: None };
         // up to a second; on Android as long as it takes, since the app starts before
         // its window exists and the window only comes once the app is in front
@@ -584,14 +623,7 @@ impl Display {
     /// comes with puts players 2 to 4 on joystick 1, and they would all move with
     /// player 1.
     pub fn controllers(&mut self) -> [Joystick; JOYSTICK_COUNT] {
-        let mut out = [Joystick::default(); JOYSTICK_COUNT];
-        for (n, (o, c)) in out.iter_mut().zip(&mut self.app.controllers).enumerate() {
-            let j = gamepad::merge(c.now, std::mem::take(&mut c.since));
-            if n > 0 || !self.app.controller_keys {
-                *o = j;
-            }
-        }
-        out
+        self.app.take_controllers()
     }
 
     /// Let joystick 1 press player 1's keys through the touch controls (when player
@@ -602,7 +634,7 @@ impl Display {
             return;
         }
         self.app.controller_keys = on;
-        let now = self.app.controllers.first().map(|c| c.now).unwrap_or_default();
+        let now = self.app.controllers[0].as_ref().map(|c| c.now).unwrap_or_default();
         if let Some(pad) = self.app.touch.as_mut() {
             pad.set_controller(if on { now } else { Joystick::default() });
         }
@@ -794,5 +826,49 @@ mod tests {
         let mut dst = vec![0u32; (W * H) as usize];
         scale_into(&src, &mut dst, W as u32, H as u32);
         assert!(src == dst);
+    }
+
+    const RIGHT: Joystick = Joystick { up: false, down: false, left: false, right: true, buttons: [false; 4] };
+
+    #[test]
+    fn a_disconnected_controller_frees_its_joystick_slot() {
+        let mut app = App::new("test", false);
+        app.controller(10, RIGHT);
+        app.controller(11, RIGHT);
+        // both slots are taken, so a third controller is ignored
+        app.controller(12, Joystick { up: true, ..Default::default() });
+        assert_eq!(app.take_controllers(), [RIGHT, RIGHT]);
+        app.remove_controller(10);
+        assert_eq!(app.take_controllers(), [Joystick::default(), RIGHT]);
+        // a reconnected controller has a new device id and takes the free slot
+        app.controller(12, Joystick { up: true, ..Default::default() });
+        assert_eq!(app.take_controllers(), [Joystick { up: true, ..Default::default() }, RIGHT]);
+    }
+
+    #[test]
+    fn joystick_1_is_not_reported_while_it_presses_player_1s_keys() {
+        let mut app = App::new("test", false);
+        app.controller_keys = true;
+        app.controller(10, RIGHT);
+        app.controller(11, RIGHT);
+        assert_eq!(app.take_controllers(), [Joystick::default(), RIGHT]);
+    }
+
+    #[test]
+    fn disconnecting_joystick_1_releases_player_1s_keys() {
+        // player 1's keys: up, down, left, right, attack, jump, defend
+        let mut app = App::new("test", false);
+        app.touch = Some(TouchPad::new([87, 83, 65, 68, 74, 75, 76]));
+        app.controller_keys = true;
+        app.controller(10, RIGHT);
+        let mut keys = Vec::new();
+        app.touch.as_mut().unwrap().changes(&mut keys);
+        assert_eq!(keys, vec![(68, true)]);
+        app.remove_controller(10);
+        keys.clear();
+        for _ in 0..10 {
+            app.touch.as_mut().unwrap().changes(&mut keys);
+        }
+        assert_eq!(keys, vec![(68, false)]);
     }
 }

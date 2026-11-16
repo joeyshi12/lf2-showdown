@@ -4,6 +4,23 @@
 use lf2_app::gamepad::stick_directions;
 use lf2_sim::input::Joystick;
 
+// AINPUT_SOURCE_* bits
+pub const SOURCE_GAMEPAD: u32 = 0x401;
+pub const SOURCE_JOYSTICK: u32 = 0x0100_0010;
+/// AINPUT_SOURCE_CLASS_POINTER: touchscreens, mice, styluses.
+pub const CLASS_POINTER: u32 = 0x2;
+
+pub fn has(source: u32, bits: u32) -> bool {
+    source & bits == bits
+}
+
+/// Whether an event with this source comes from a controller. A keyboard with arrow
+/// keys has the D-pad source (AINPUT_SOURCE_DPAD) too, so that source alone does not
+/// make an event a controller's.
+pub fn is_controller(source: u32) -> bool {
+    has(source, SOURCE_GAMEPAD) || has(source, SOURCE_JOYSTICK)
+}
+
 /// One controller's state from its key and motion events.
 #[derive(Default)]
 pub struct Pad {
@@ -111,5 +128,17 @@ mod tests {
         p.keys.left = true;
         p.keys.buttons[3] = true;
         assert_eq!(p.joystick(), Joystick { left: true, buttons: [false, false, false, true], ..Default::default() });
+    }
+
+    #[test]
+    fn keyboards_are_not_controllers() {
+        // keyboard with arrow keys (KEYBOARD | DPAD), keyboard only
+        for source in [0x301, 0x101] {
+            assert!(!is_controller(source), "source {:#x}", source);
+        }
+        // gamepad buttons (KEYBOARD | DPAD | GAMEPAD), gamepad, a stick
+        for source in [0x701, 0x401, 0x0100_0010] {
+            assert!(is_controller(source), "source {:#x}", source);
+        }
     }
 }

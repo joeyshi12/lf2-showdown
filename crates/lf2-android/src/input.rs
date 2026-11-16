@@ -13,15 +13,19 @@
 //! The touch controls start hidden when MainActivity reports a controller connected,
 //! hide when one is connected later and show when the last one is gone.
 
-use crate::codes::{vk, Pad};
+use crate::codes::{has, is_controller, vk, Pad, CLASS_POINTER, SOURCE_JOYSTICK};
 use lf2_app::window::{Input, InputSource, Phase};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Mutex;
 use winit::platform::android::activity::input::{Axis, InputEvent, KeyAction, Keycode, MotionAction};
 use winit::platform::android::activity::{AndroidApp, InputStatus};
 
 /// What MainActivity last reported: 0 nothing new, 1 no controller, 2 a controller.
 static CONTROLLER_NOTICE: AtomicU8 = AtomicU8::new(0);
+
+/// The ids of the devices MainActivity reported as removed since the last read.
+static REMOVED_DEVICES: Mutex<Vec<i32>> = Mutex::new(Vec::new());
 
 /// MainActivity reports whether a controller is connected, when it starts and when
 /// a device is added or removed.
@@ -34,19 +38,16 @@ extern "C" fn Java_xyz_joeyshi_lf2showdown_MainActivity_nativeControllerConnecte
     CONTROLLER_NOTICE.store(if connected != 0 { 2 } else { 1 }, Ordering::Release);
 }
 
-// AINPUT_SOURCE_* bits
-const SOURCE_DPAD: u32 = 0x201;
-const SOURCE_GAMEPAD: u32 = 0x401;
-const SOURCE_JOYSTICK: u32 = 0x0100_0010;
-/// AINPUT_SOURCE_CLASS_POINTER: touchscreens, mice, styluses.
-const CLASS_POINTER: u32 = 0x2;
-
-fn has(source: u32, bits: u32) -> bool {
-    source & bits == bits
-}
-
-fn is_controller(source: u32) -> bool {
-    has(source, SOURCE_GAMEPAD) || has(source, SOURCE_JOYSTICK) || has(source, SOURCE_DPAD)
+/// MainActivity reports that input device `device` was removed.
+#[no_mangle]
+extern "C" fn Java_xyz_joeyshi_lf2showdown_MainActivity_nativeDeviceRemoved(
+    _env: *mut libc::c_void,
+    _this: *mut libc::c_void,
+    device: i32,
+) {
+    if let Ok(mut removed) = REMOVED_DEVICES.lock() {
+        removed.push(device);
+    }
 }
 
 pub struct AndroidInput {
@@ -66,6 +67,11 @@ impl InputSource for AndroidInput {
             1 => input.show_touch_controls(true),
             2 => input.show_touch_controls(false),
             _ => {}
+        }
+        let removed = REMOVED_DEVICES.lock().map(|mut r| std::mem::take(&mut *r)).unwrap_or_default();
+        for device in removed {
+            self.pads.remove(&device);
+            input.remove_controller(device);
         }
         let Ok(mut events) = self.app.input_events_iter() else { return };
         let pads = &mut self.pads;
