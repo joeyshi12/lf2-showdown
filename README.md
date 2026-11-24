@@ -21,6 +21,9 @@ Little Fighter 2 v2.0a rebuilt in Rust. Private study only.
   picture to switch from the keyboard to joystick 1 or 2, the first and second
   controller connected. The direction pad and left stick move; the bottom, right,
   left and top face buttons are buttons 0 to 3.
+- Controllers on the title screens (all three): the direction pad or stick moves
+  between the things the mouse can click, the bottom face button clicks, and the
+  right one goes back. Moving the mouse or touching the screen takes over again.
 - Music: `game/bgm/` has the music as Ogg. For another copy of the game, run
   `tools/convert_bgm.sh GAME_DIR` once to turn its WMA music into Ogg files. The
   browser needs them; the desktop can also play the WMA files.

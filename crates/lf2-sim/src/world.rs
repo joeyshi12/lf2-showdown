@@ -49,6 +49,9 @@ pub struct World {
     /// Stage mode: the counter blocks of the current phase's spawn slots.
     pub spawn_rt: Vec<crate::stage::SpawnRt>,
     pub draw: Vec<crate::draw::Draw>,
+    /// What the title screens' mouse could click in the last frame, for a controller
+    /// to move the mouse between (`lf2_app::menu_nav`).
+    pub menu_targets: Vec<crate::menu::MenuTarget>,
     /// Milliseconds from the platform clock (`timeGetTime`); only used for cosmetic
     /// choices such as which menu background to show.
     pub time_ms: u32,
@@ -85,6 +88,7 @@ impl World {
             buffer_sounds: Vec::new(),
             spawn_rt: vec![Default::default(); lf2_data::stage::MAX_SPAWNS],
             draw: Vec::new(),
+            menu_targets: Vec::new(),
             time_ms: 0,
             menu_back: 1,
             requests: Vec::new(),

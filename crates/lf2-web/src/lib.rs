@@ -31,6 +31,9 @@ pub struct Game {
     /// The controllers as `set_gamepad` last gave them.
     pads: [lf2_sim::input::Joystick; lf2_sim::input::JOYSTICK_COUNT],
     joysticks: lf2_app::gamepad::Joysticks,
+    nav: lf2_app::menu_nav::MenuNav,
+    /// The mouse as the last `step` got it.
+    last_mouse: (i32, i32),
 }
 
 impl Game {
@@ -73,6 +76,8 @@ impl Game {
             net: None,
             pads: Default::default(),
             joysticks: Default::default(),
+            nav: Default::default(),
+            last_mouse: (0, 0),
         })
     }
 
@@ -92,6 +97,8 @@ impl Game {
         if !mouse_down && self.mouse_was_down {
             w.g.m.set_i32(MOUSE_CLICK, 0);
         }
+        let mouse_used = (mouse_x, mouse_y) != self.last_mouse || (mouse_down && !self.mouse_was_down);
+        self.last_mouse = (mouse_x, mouse_y);
         self.mouse_was_down = mouse_down;
         let kb = lf2_sim::world::KEYS;
         for (i, &k) in self.keys.iter().enumerate() {
@@ -108,6 +115,8 @@ impl Game {
             *k = w.g.m.u8(kb + i as u32);
         }
         self.joysticks.write(&mut w.g, &self.pads);
+        self.nav.update(w, &self.pads, mouse_used);
+        self.frame.cursor = self.nav.cursor(w).or(self.frame.cursor);
         w.time_ms = time_ms;
         if local_time.len() >= 6 {
             w.local_time.copy_from_slice(&local_time[..6]);
@@ -236,7 +245,7 @@ impl Game {
     /// a tick; the mouse position is where the menus' cursor is drawn. Returns false
     /// when no tick is kept yet; `picture` then holds nothing new.
     pub fn draw_smooth(&mut self, t: f64, first: bool, mouse_x: i32, mouse_y: i32) -> bool {
-        self.frame.cursor = Some((mouse_x, mouse_y));
+        self.frame.cursor = Some(self.nav.cursor(&self.world).unwrap_or((mouse_x, mouse_y)));
         if !self.tween.ready() {
             self.renderer.draw_frame(&self.world, &self.assets, &mut self.frame);
             self.to_rgba();
