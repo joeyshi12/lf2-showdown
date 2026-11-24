@@ -98,7 +98,8 @@ fn every_bitmap_decodes() {
             }
         }
     }
-    assert!(n > 400, "only {} bitmaps", n);
+    // 328 in game/, which has no *_mirror.bmp files
+    assert!(n > 300, "only {} bitmaps", n);
     let exe = lf2_data::read_exe(&d).unwrap();
     let res = image::pe_bitmaps(&exe);
     for name in ["FRAME", "WORDS0", "BARS", "SPARK", "SHADOW1", "PAUSE"] {

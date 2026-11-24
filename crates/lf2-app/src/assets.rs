@@ -139,3 +139,17 @@ impl Assets {
         Assets { objects, backgrounds, res, ad }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// game/ has no *_mirror.bmp files, so every left-facing sprite comes from `mirror`.
+    #[test]
+    fn mirror_flips_each_row_left_to_right() {
+        let img = Image { w: 3, h: 2, px: vec![1, 2, 3, 4, 5, 6] };
+        let m = mirror(&img);
+        assert_eq!((m.w, m.h), (3, 2));
+        assert_eq!(m.px, [3, 2, 1, 6, 5, 4]);
+    }
+}
