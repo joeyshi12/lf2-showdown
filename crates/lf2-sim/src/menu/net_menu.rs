@@ -79,6 +79,9 @@ impl World {
     }
 
     fn button(&mut self, x: i32, y: i32, w: i32, label: &str, enabled: bool) -> bool {
+        if enabled {
+            self.target(x, y, x + w - 1, y + 23, matches!(label, "cancel" | "back" | "leave"));
+        }
         let hover = enabled && self.mouse_in(x, y, w, 24);
         let (line, fill, text) = match (enabled, hover) {
             (false, _) => (OFF_LINE, PANEL, DIM),
@@ -91,6 +94,7 @@ impl World {
     }
 
     fn item(&mut self, y: i32, label: &str) -> bool {
+        self.target(PX + 20, y, PX + PW - 21, y + 25, label == "back");
         let hover = self.mouse_in(PX + 20, y, PW - 40, 26);
         if hover {
             self.rounded(PX + 20, y, PW - 40, 26, LINE, HOVER);

@@ -23,3 +23,28 @@ pub fn sheet_resource(global: u32) -> Option<&'static str> {
         })
 }
 pub mod champ1;
+
+/// A place on a title screen that the mouse can click: the rectangle the screen's
+/// hit test accepts, from (x0, y0) to (x1, y1) inclusive. `back` is the screen's
+/// back or cancel button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MenuTarget {
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub back: bool,
+}
+
+impl MenuTarget {
+    pub fn centre(&self) -> (i32, i32) {
+        ((self.x0 + self.x1) / 2, (self.y0 + self.y1) / 2)
+    }
+}
+
+impl crate::World {
+    /// Record a place the mouse can click this frame (see `World::menu_targets`).
+    pub(crate) fn target(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, back: bool) {
+        self.menu_targets.push(MenuTarget { x0, y0, x1, y1, back });
+    }
+}

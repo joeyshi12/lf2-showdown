@@ -4,7 +4,9 @@
 use crate::menu::main_menu::{MenuRequest, MENU_CLIP, MENU_CLIP5, MENU_Y, MOUSE_CLICK, MOUSE_X, MOUSE_Y};
 use crate::world::{World, KEYS};
 
-pub(crate) const SCREEN: u32 = 0x44d064;
+/// The title screen shown while the game state is 0: 0 the main title, 1 to 5 the
+/// network game, 6 control settings, 7 recording info, 8 the challenge message.
+pub const SCREEN: u32 = 0x44d064;
 pub(crate) const PREV_CLICK: u32 = 0x44d060;
 const ADS: u32 = 0x450be8;
 const ADS_ANIM: u32 = 0x4511f4;
@@ -291,6 +293,9 @@ impl World {
         let y0 = self.t(MENU_Y);
         self.blit(MENU_CLIP5, 0x107, y0 + 0xca, 0, true);
         self.tw(KEY_SLOT, 0);
+        for (top, bottom) in [(0xd9, 0xf1), (0xf7, 0x110), (0x117, 0x130), (0x135, 0x14e), (0x153, 0x16c)] {
+            self.target(0x114, y0 + top, 0x208, y0 + bottom, false);
+        }
         let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
         if !(0x113 < mx && mx < 0x209) {
             self.draw_main_menu(PREV_CLICK);
@@ -394,8 +399,26 @@ impl World {
                 self.requests.push(MenuRequest::OpenUrl("http://www.littlefighter.com/control_index.html"));
             }
         }
-        // a key slot is waiting for a key (or a joystick button)
+        // a key slot is waiting for a key (or a joystick button): the controller's
+        // buttons go there, so nothing is offered to click
         let slot = self.t(KEY_SLOT);
+        if slot <= 0 {
+            for p in 0..4i32 {
+                let x = 0xc2 + 0x8b * p;
+                self.target(x, 0xb6, x + 0x69, 0x110, false);
+                self.target(x, 0x9c, x + 0x69, 0xad, false);
+                let kind = self.t(CONTROLS + 0x50 * p as u32);
+                for k in 0..7 {
+                    let y = 0x11b + 0x16 * k;
+                    if kind == 0 || 3 < k {
+                        self.target(x, y - 3, x + 0x69, y + 0xf, false);
+                    }
+                }
+            }
+            self.target(0x195, 0x1b9, 0x230, 0x1d1, false);
+            self.target(0x246, 0x1b9, 0x2e1, 0x1d1, true);
+            self.target(0x2e, 0x1db, 0x21c, 0x1f2, false);
+        }
         if 0 < slot {
             let kind = self.t(CONTROLS + 4 * ((slot / 0x14) * 0x14) as u32);
             if kind != 0 {
@@ -518,6 +541,14 @@ impl World {
         self.blit(MENU_CLIP6, 0x2c, 0x93, 0, true);
         let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
         let fields = [(0x44fd18u32, 0xcf, 0xe1), (0x44f900, 0xe8, 0x12e), (0x44f890, 0x135, 0x147)];
+        for f in fields {
+            self.target(0xd2, f.1, 0x2da, f.2, false);
+        }
+        self.target(0x11f, 0x186, 0x132, 0x199, false);
+        self.target(0x185, 0x184, 0x2dc, 0x19a, false);
+        self.target(0xe7, 0x1a0, 0x182, 0x1b8, false);
+        self.target(0x193, 0x1a0, 0x22e, 0x1b8, true);
+        self.target(0x2c, 0x1cd, 0x1e3, 0x1e4, false);
         if self.clicked() {
             let f = if (0xd2..=0x2da).contains(&mx) {
                 fields.iter().find(|f| f.1 <= my && my <= f.2).map_or(0, |f| f.0)
@@ -611,6 +642,8 @@ impl World {
     fn title_challenge(&mut self) {
         self.blit(MENU_CLIP, 0x9b, 0x4b, 1, true);
         self.blit(MENU_CLIP6, 0x2c, 0xa7, 3, true);
+        self.target(0x13e, 0x17e, 0x1d8, 0x196, true);
+        self.target(0x60, 0x15c, 0x27f, 0x174, false);
         let (mx, my) = (self.t(MOUSE_X), self.t(MOUSE_Y));
         let click = self.clicked();
         if 0x5f < mx && 0x15b < my && mx < 0x280 && my < 0x175 {

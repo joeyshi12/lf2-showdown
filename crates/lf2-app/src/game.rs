@@ -152,6 +152,8 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
     let mut net = crate::net::Net::default();
     let mut controllers = crate::gamepad::Controllers::new();
     let mut joysticks = crate::gamepad::Joysticks::default();
+    let mut nav = crate::menu_nav::MenuNav::default();
+    let mut last_mouse = None;
     let mut events: Vec<(u8, bool)> = Vec::new();
     let take_events = |window: &mut Display, events: &mut Vec<(u8, bool)>| {
         window.pump();
@@ -204,14 +206,20 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
                 *p = crate::gamepad::merge(*p, w);
             }
             joysticks.write(&mut world.g, &pads);
-            // a player 1 on the keyboard plays with joystick 1 too (Android)
-            window.set_controller_keys(world.g.m.i32(lf2_sim::world::CONTROLS + 0x50) == 0);
-            if let Some((mx, my)) = window.mouse() {
+            // a player 1 on the keyboard plays with joystick 1 too (Android), but not on
+            // the title screens, where the controller moves the mouse (menu_nav) and
+            // keys would type into the text fields
+            let in_title = world.g.m.i32(lf2_sim::world::GAME) == 0;
+            window.set_controller_keys(world.g.m.i32(lf2_sim::world::CONTROLS + 0x50) == 0 && !in_title);
+            let mouse = window.mouse();
+            if let Some((mx, my)) = mouse {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_X, mx);
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_Y, my);
                 frame.cursor = Some((mx, my));
             }
             let down = window.mouse_down();
+            let mouse_used = mouse != last_mouse || (down && !mouse_was_down);
+            last_mouse = mouse;
             // as the window procedure (0x43b3d0): 1 on button down, 0 on button up
             if down && !mouse_was_down {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_CLICK, 1);
@@ -220,6 +228,12 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
                 world.g.m.set_i32(lf2_sim::menu::main_menu::MOUSE_CLICK, 0);
             }
             mouse_was_down = down;
+            nav.update(&mut world, &pads, mouse_used);
+            if let Some(c) = nav.cursor(&world) {
+                frame.cursor = Some(c);
+            }
+            // the cursor shows where the controller is, even with touch controls
+            frame.hide_cursor = touch && !nav.active();
             world.time_ms = start.elapsed().as_millis() as u32;
             world.local_time = platform::local_time();
             if over {
@@ -329,8 +343,8 @@ pub fn run(o: Options, display: impl FnOnce(bool) -> Display) {
             }
             // the keys wait in the window for the next tick's take_keys
             window.pump();
-            if let Some((mx, my)) = window.mouse() {
-                frame.cursor = Some((mx, my));
+            if let Some(c) = nav.cursor(&world).or(window.mouse()) {
+                frame.cursor = Some(c);
             }
             renderer.draw_tween(&mut tween, 0.5, false, &assets, &mut frame);
             over_text(&mut frame);

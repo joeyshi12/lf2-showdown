@@ -30,6 +30,7 @@ impl World {
         // sounds are per frame: a frame that does not reach flush_sounds plays none
         self.sounds.clear();
         self.draw.clear();
+        self.menu_targets.clear();
         // requests stay until the platform takes them (some come between frames)
         self.music.clear();
         for vk in 0..0xfau32 {
